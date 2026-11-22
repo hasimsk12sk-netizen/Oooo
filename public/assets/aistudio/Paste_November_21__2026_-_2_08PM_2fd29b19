@@ -1,0 +1,1183 @@
+STORE PRO – COMPLETE MASTER DEVELOPMENT PROMPT
+
+Animated Banner Modification + App Performance Optimization + WhatsApp & Telegram Integration + Real Device Detection & Management
+
+Carefully inspect my existing STORE PRO Android application project before making any changes.
+
+I want you to implement all the requirements specified in this document directly in my existing project.
+
+This document contains FOUR major development tasks:
+
+1. Animated Banner Modifications.
+2. Complete Application Performance Optimization.
+3. WhatsApp and Telegram Social Media Integration.
+4. Real Device Detection and Device Management System.
+
+CRITICAL INSTRUCTION: Do not redesign, rebuild, replace, or modify any existing part of my application except the specific changes explicitly requested in this document.
+
+Preserve the existing project structure, UI, design, layout, features, functionality, database connections, and application architecture.
+
+---
+
+PART 1: ANIMATED BANNER MODIFICATIONS
+
+1. Correct the Text in Two Different Locations
+
+There are currently two incorrect spellings of my name inside the Animated Banner Box.
+
+Correct both locations as follows:
+
+First Location – Main Heading:
+
+- Current text: HASHIM
+- Replace with: HASIM
+
+Second Location – Top Badge:
+
+- Current text: HASHIM APK
+- Replace with: HASIM APK
+
+IMPORTANT:
+
+- Use exactly HASIM everywhere.
+- Do not use HASHIM.
+- Do not use HASHEM.
+- Do not introduce any other spelling variations.
+- Make sure both locations display the corrected spelling.
+
+2. Completely Remove the Subtitle Text
+
+Inside the Animated Banner Box, directly below the main heading, there is currently a subtitle:
+
+"STORE PRO · 3D TRENDING SHOWCASE"
+
+Completely remove this entire subtitle text.
+
+Requirements:
+
+- Remove only this specific subtitle.
+- Do not replace it with another text.
+- Do not display an empty text placeholder.
+- Do not remove the main heading HASIM.
+- Do not remove the HASIM APK badge.
+- Do not remove or modify any other text or visual elements.
+
+The subtitle must no longer appear anywhere inside this banner.
+
+3. Completely Remove the Sound Button
+
+There is a Sound/Mute button located in the upper-right corner of the Animated Banner Box.
+
+Remove this button completely.
+
+Requirements:
+
+- Remove the entire Sound/Mute button from the UI.
+- Remove its sound icon.
+- Remove its button background, border and associated visual elements.
+- Remove its click listener and related button interaction.
+- Do not replace it with another icon or button.
+- Do not leave an empty button space or placeholder.
+
+The sound control must be completely absent from the banner.
+
+4. Make the Entire Animated Banner Box Completely Non-Clickable
+
+The Animated Banner Box must function exclusively as a visual animation display.
+
+Disable all click and touch interactions within the complete banner area, including every element inside it.
+
+Specifically:
+
+- Clicking anywhere inside the banner must do absolutely nothing.
+- Tapping the main heading must do nothing.
+- Tapping the HASIM APK badge must do nothing.
+- Tapping the ChatGPT icon must do nothing.
+- Tapping the YouTube icon must do nothing.
+- Tapping the Instagram icon must do nothing.
+- Tapping any other animated element must do nothing.
+- No application should open.
+- No search interface should open.
+- No search box or search dialog should appear.
+- No external website or link should open.
+- No activity or screen navigation should occur.
+- No popup, dialog or menu should appear.
+- No click listener or other interaction should be triggered.
+
+Make the complete banner container non-clickable and non-interactive, not just its individual buttons.
+
+Inspect child elements, nested layouts, icon components, gesture detectors, touch listeners and clickable overlays.
+
+The banner must continue displaying its animation normally.
+
+Do not accidentally disable interactions on other Home Screen components.
+
+5. Preserve the Existing Animation Exactly as It Is
+
+I do NOT want a new animation or a redesigned banner.
+
+Keep the existing Animated Banner Box visually and functionally identical to its current animation, except for the requested changes.
+
+Preserve:
+
+- Existing 3D animation.
+- Existing animation sequences.
+- Existing movement and transitions.
+- Existing animation speed and timing.
+- Existing background.
+- Existing dark navy appearance.
+- Existing cyan and purple neon borders.
+- Existing glowing effects.
+- Existing gradients.
+- Existing 3D logo and visual effects.
+- Existing ChatGPT animated icon.
+- Existing YouTube animated icon.
+- Existing Instagram animated icon.
+- Existing icon positions and sizes.
+- Existing banner dimensions and layout.
+- Existing animation behavior and rendering quality.
+
+Do not remove, replace, simplify or recreate the existing animation.
+
+6. Do Not Modify Anything Outside the Animated Banner
+
+Keep every other section of STORE PRO unchanged.
+
+Do not modify:
+
+- STORE PRO header and logo.
+- User profile picture.
+- Search bar.
+- Trending Applications.
+- Popular Applications.
+- Application cards.
+- App icons.
+- Ratings and download information.
+- Bottom navigation.
+- Discover button.
+- My Library button.
+- Center upload button.
+- Existing application navigation.
+- Other buttons and their functionality.
+- Existing database connections.
+- Firebase configuration.
+- Existing application features.
+
+Only the Animated Banner should become non-clickable.
+
+7. Development Instructions
+
+Before modifying the project:
+
+1. Inspect the existing project structure.
+2. Locate the exact Home Screen Animated Banner implementation.
+3. Identify its text, sound button, animation and click interactions.
+4. Modify the existing implementation directly.
+5. Preserve the original animation logic.
+6. Avoid unnecessary changes to unrelated files.
+7. Do not create a duplicate banner.
+8. Do not replace the banner with a static image.
+9. Do not introduce unnecessary dependencies.
+
+Make the smallest possible code changes.
+
+8. Final Animated Banner Result
+
+Element| Required Result
+Main Heading| HASIM
+Top Badge| HASIM APK
+Subtitle| Completely Removed
+Sound/Mute Button| Completely Removed
+ChatGPT Animation| Preserved
+YouTube Animation| Preserved
+Instagram Animation| Preserved
+Existing 3D Animation| Fully Preserved
+Banner Click Interaction| Disabled
+Banner Touch Interaction| Disabled
+Other Home Screen Features| Unchanged
+
+---
+
+PART 2: COMPLETE APP PERFORMANCE OPTIMIZATION – SMOOTHNESS & LAG FIX
+
+Optimize the overall performance of my existing STORE PRO Android application.
+
+Do not change, redesign, remove, replace, or modify any existing UI, design, layout, features, or functionality.
+
+Your task is to improve application performance while preserving its existing appearance and functionality.
+
+9. Make the Entire Application Extremely Smooth
+
+Requirements:
+
+- Make the application extremely smooth during normal usage.
+- Eliminate unnecessary lag and stuttering.
+- Fix noticeable UI freezing and performance delays.
+- Improve screen transitions and navigation.
+- Make scrolling smooth across all application sections.
+- Make application cards and lists respond quickly.
+- Improve button and touch responsiveness.
+- Prevent unnecessary delays when opening screens.
+- Ensure animations run smoothly.
+- Reduce UI rendering delays.
+- Optimize unnecessary layout recalculations.
+
+The application should feel polished, fluid, and professionally optimized.
+
+10. Fix Lag and Performance Issues
+
+Inspect the existing project and identify performance bottlenecks.
+
+Optimize where necessary:
+
+- Main UI thread performance.
+- Background task execution.
+- Memory management.
+- CPU usage.
+- Unnecessary object creation.
+- Repeated UI rendering.
+- Inefficient layout operations.
+- Image loading and caching.
+- Application list rendering.
+- Firebase data loading.
+- Network operations.
+- Unnecessary database requests.
+- Animation rendering.
+- Screen initialization.
+- Navigation performance.
+
+Move heavy operations away from the main UI thread wherever appropriate.
+
+Use efficient background processing, caching, and asynchronous operations.
+
+Avoid unnecessary repeated network requests and database operations.
+
+Fix the actual causes of lag rather than applying superficial changes.
+
+11. Smooth Scrolling and Animations
+
+Ensure that:
+
+- Home Screen scrolling feels smooth.
+- Trending Applications scrolling is smooth.
+- Popular Applications scrolling is smooth.
+- Application lists load efficiently.
+- Existing animations play smoothly.
+- Existing transitions remain responsive.
+- The Animated Banner continues running without unnecessary lag.
+- Scrolling does not cause noticeable freezing.
+- UI interactions remain responsive during background operations.
+
+Do not reduce animation quality or remove animation effects to improve performance.
+
+12. Memory and Resource Optimization
+
+- Prevent unnecessary memory usage.
+- Avoid memory leaks.
+- Properly manage image and animation resources.
+- Optimize image loading and caching.
+- Release unused resources when appropriate.
+- Avoid unnecessary background processing.
+- Prevent repeated resource initialization.
+- Maintain stable performance during extended usage.
+
+13. Preserve Existing UI and Functionality
+
+Do not:
+
+- Redesign any screen.
+- Change colors, fonts, icons, or typography.
+- Change card dimensions or layouts.
+- Change the Home Screen design.
+- Change the navigation system.
+- Remove existing features.
+- Modify existing application content.
+- Change Firebase configuration unnecessarily.
+- Change database structures unnecessarily.
+- Modify authentication functionality.
+- Change existing application workflows.
+
+Performance optimization must happen internally through code-level improvements, not through UI redesign.
+
+14. Performance Testing
+
+After optimization:
+
+1. Check performance bottlenecks.
+2. Verify smooth Home Screen scrolling.
+3. Verify responsive navigation.
+4. Verify animations.
+5. Verify application list loading.
+6. Check memory leaks.
+7. Verify Firebase operations.
+8. Check existing functionality.
+9. Build the application successfully.
+10. Fix errors introduced by modifications.
+
+Do not claim performance issues are fixed unless the changes have actually been implemented and tested.
+
+15. Final Performance Objective
+
+STORE PRO should feel like a professionally optimized Android application.
+
+It should be:
+
+- Extremely smooth.
+- Fast and responsive.
+- Free from noticeable lag and stuttering.
+- Smooth during scrolling and navigation.
+- Efficient in memory and resource usage.
+- Stable during continuous usage.
+- Responsive during animations and background operations.
+
+---
+
+PART 3: WHATSAPP & TELEGRAM SOCIAL MEDIA INTEGRATION
+
+16. Add WhatsApp and Telegram Icons to My Library / Profile Screen
+
+I want to add two social media icons to the existing My Library / Profile Screen.
+
+Currently, the My Library section contains my existing profile picture.
+
+Add:
+
+1. WhatsApp icon.
+2. Telegram icon.
+
+Both icons must appear beside the existing profile picture.
+
+Required Icon Position
+
+Place the icons on opposite sides of the existing profile picture.
+
+Required arrangement:
+
+[ WhatsApp Icon ] [ Existing Profile Picture ] [ Telegram Icon ]
+
+- WhatsApp on the LEFT.
+- Existing profile picture in the CENTER.
+- Telegram on the RIGHT.
+
+Keep the existing profile picture exactly as it is.
+
+Do not replace or remove it.
+
+If minor layout adjustments are required, make them only within this specific profile area.
+
+Do not redesign the entire My Library screen.
+
+17. WhatsApp Icon and Group Link
+
+Add a recognizable WhatsApp icon on the LEFT side of the existing profile picture.
+
+Connect it to this exact WhatsApp group invitation:
+
+https://chat.whatsapp.com/KZPB5BRZNpJ1wNIL3JawJ8?s=cl&p=a&iam=2
+
+Requirements:
+
+- Display a recognizable WhatsApp icon.
+- Make the icon clickable.
+- Open the exact provided group invitation.
+- Allow users to proceed to join the group.
+- Do not use a different URL.
+- Do not modify the invitation link.
+
+If WhatsApp is installed, try opening the invitation through WhatsApp.
+
+If WhatsApp is unavailable, gracefully open the invitation in a supported browser.
+
+18. Telegram Icon and Channel Link
+
+Add a recognizable Telegram icon on the RIGHT side of the existing profile picture.
+
+Connect it to this exact Telegram channel:
+
+https://t.me/hasimapk
+
+Requirements:
+
+- Display a recognizable Telegram icon.
+- Make the icon clickable.
+- Open the exact provided channel.
+- Allow users to view and join or follow the channel.
+- Do not use a different URL.
+- Do not modify the channel link.
+
+If Telegram is installed, try opening the channel directly in Telegram.
+
+If Telegram is unavailable, gracefully open the channel through a supported browser.
+
+19. Social Media Icon Design
+
+- Use recognizable WhatsApp and Telegram brand icons.
+- Use high-quality icon assets or vector drawables.
+- Maintain appropriate icon dimensions.
+- Keep both icons visually balanced.
+- Make both icons clearly visible.
+- Maintain proper spacing.
+- Ensure the icons do not overlap the profile picture.
+- Maintain proper alignment.
+- Support different Android screen sizes.
+
+Do not use text labels instead of icons.
+
+Do not change the existing profile picture.
+
+Do not change the overall STORE PRO visual identity.
+
+20. Social Media Click Functionality
+
+Both icons must work independently.
+
+WhatsApp:
+
+- Opens only the provided WhatsApp invitation.
+- Must not open Telegram.
+
+Telegram:
+
+- Opens only the provided Telegram channel.
+- Must not open WhatsApp.
+
+Use separate click listeners.
+
+Handle missing applications gracefully.
+
+Avoid crashes if an external application cannot be opened.
+
+IMPORTANT: The non-clickable restriction in PART 1 applies ONLY to the Animated Banner. The WhatsApp and Telegram icons in this section MUST remain clickable.
+
+21. Preserve Existing My Library Features
+
+Only add WhatsApp and Telegram icons beside the existing profile picture.
+
+Do not modify:
+
+- Existing profile picture.
+- Existing profile information.
+- Authentication.
+- Existing My Library content.
+- Application lists.
+- Navigation.
+- Existing buttons.
+- Database connections.
+- Other existing functionality.
+
+Do not create a new profile screen.
+
+Modify the existing My Library / Profile Screen directly.
+
+22. Social Integration Expected Result
+
+Element| Required Result
+WhatsApp Icon| Left side
+Existing Profile Picture| Center
+Telegram Icon| Right side
+WhatsApp Click| Opens exact group
+Telegram Click| Opens exact channel
+Existing Profile Features| Preserved
+Other My Library Features| Preserved
+
+---
+
+PART 4: REAL DEVICE DETECTION & DEVICE MANAGEMENT SYSTEM
+
+23. Inspect the Existing Device Dashboard Carefully
+
+Locate the existing Device tab inside the My Library section.
+
+Use my provided screenshot as the exact visual reference.
+
+The screenshot currently displays:
+
+- Live Device Dashboard.
+- Refresh button.
+- Total Devices counter.
+- Active Now counter.
+- Offline counter.
+- Blocked counter.
+- Device search field.
+- Device information cards.
+- Device Details dropdown.
+- Block button.
+- Delete button.
+
+Currently, the dashboard contains many unwanted device records, including:
+
+- sdk_gphone64_arm64
+- Google sdk_gphone64_arm64
+- robolectric (robolectric)
+- Other emulator or testing device entries.
+
+These entries must not appear as real users.
+
+I want a genuine device detection and management system that displays ONLY real devices belonging to people who have actually installed and used STORE PRO.
+
+Do not display fake devices, emulator records, testing records, automatically generated sample devices, or artificial device entries.
+
+24. Completely Remove Fake, Emulator and Testing Device Records
+
+This is one of the most important requirements.
+
+Remove the unwanted fake or testing device records from the Device Dashboard.
+
+Specifically, exclude:
+
+- robolectric.
+- Robolectric testing devices.
+- sdk_gphone64_arm64.
+- Android SDK emulator devices.
+- Google emulator testing records.
+- Automated testing devices.
+- Dummy devices.
+- Sample device records.
+- Placeholder device records.
+- Automatically generated fake installations.
+- Duplicate device records created by testing or repeated registration.
+
+Do not display these devices as actual users.
+
+Do not count them in the Total Devices number.
+
+Do not count them in the Active Now number.
+
+Do not count them in the Offline number.
+
+Do not count them in the Blocked number.
+
+Only genuine STORE PRO application installations and registered user devices should appear in this dashboard.
+
+Do not simply hide these entries from the UI while continuing to count them in the statistics.
+
+Correct the underlying device registration and data-query logic.
+
+25. Register Only Genuine STORE PRO App Users
+
+I want a device to appear in my Device Dashboard only when someone has genuinely installed and opened STORE PRO.
+
+Implement proper device registration using the existing application architecture and backend.
+
+Required behavior:
+
+1. A user installs STORE PRO.
+2. The user opens STORE PRO for the first time.
+3. The application identifies the actual device model and device information.
+4. The application creates a genuine device registration record.
+5. The registered device appears in the administrator's Device Dashboard.
+6. The device information updates automatically when the user opens or uses the application.
+
+Do not create device records simply because an emulator, test environment, or automated testing process runs the application.
+
+Do not create fake records when the application has not actually been launched by a real user.
+
+A device should be registered only after a genuine application launch and successful registration.
+
+Use a stable, app-scoped installation identifier to prevent duplicate device records.
+
+If the same user opens the application repeatedly on the same installation, update the existing record instead of creating another device.
+
+If the same person installs the application on another genuine device, register that as a separate device.
+
+Do not rely on a hardcoded list of phone models.
+
+Detect actual device information dynamically using Android APIs.
+
+26. Display Real Mobile Device Information
+
+This is extremely important.
+
+I do not want generic names such as:
+
+- sdk_gphone64_arm64
+- robolectric
+- Android Emulator
+- Unknown Testing Device
+
+I want the actual mobile phone's model and detailed device information.
+
+For example, my own device should display information similar to:
+
+Hasim's A14
+
+Realme RMX5061
+
+Realme · Last seen just now
+
+Active
+
+Logged In
+
+The displayed information must come from the actual device rather than hardcoded sample values.
+
+Collect and display available, non-sensitive device information such as:
+
+Primary Device Information
+
+- User-friendly device name.
+- Manufacturer.
+- Device brand.
+- Actual device model.
+- Model number.
+- Android version.
+- Android SDK version.
+- Device type, where reliably available.
+- Application version installed on the device.
+
+Additional Device Information
+
+- First installation registration date.
+- First application launch date.
+- Last seen date and time.
+- Total number of days using STORE PRO.
+- Last active time.
+- Current online/offline status.
+- Account login status.
+- Guest or registered user status.
+
+Display all available information accurately.
+
+Do not invent unavailable device information.
+
+If a particular field cannot be detected, show an appropriate value such as "Not Available" instead of displaying fake information.
+
+Do not collect IMEI, phone numbers, hardware serial numbers, MAC addresses, precise location, or other unnecessary sensitive identifiers.
+
+27. Device Name and Display Format
+
+The main title of each device card should display the actual detected device model or a user-friendly device name.
+
+For example:
+
+Hasim's A14
+
+Realme RMX5061
+
+Realme · Last seen just now
+
+Active | Logged In
+
+For another user, display that user's actual detected device model.
+
+Do not show the same model name for every device.
+
+Do not hardcode "Hasim's A14".
+
+Use the actual device model and manufacturer information dynamically.
+
+If a user-friendly device name is unavailable, generate a readable display name from the real manufacturer and model.
+
+Keep the existing card design and visual hierarchy.
+
+28. Show Detailed Device Information
+
+Keep the existing Details dropdown on every device card.
+
+When the administrator taps Details, expand the card and display additional information about that specific device.
+
+Show available information such as:
+
+- Device display name.
+- Manufacturer.
+- Brand.
+- Model number.
+- Android version.
+- Android SDK version.
+- STORE PRO application version.
+- First registered date.
+- First used date.
+- Total usage duration.
+- Last seen date and time.
+- Online/offline status.
+- Login/guest status.
+- Device registration identifier.
+
+The Details section must show actual information associated with that particular device.
+
+Do not show generic or duplicated information.
+
+The Details dropdown should continue working smoothly.
+
+29. Accurate Online, Active and Offline Status
+
+I want the Device Dashboard to display genuine activity information.
+
+Implement a reliable last-seen and heartbeat system.
+
+Required statuses:
+
+ACTIVE / ONLINE
+
+Display Active or Online when the device has recently communicated with the backend and is currently using the application.
+
+OFFLINE
+
+Display Offline when the device has not communicated with the backend within the defined activity timeout.
+
+LAST SEEN
+
+Display the actual last communication time.
+
+Examples:
+
+- Last seen just now.
+- Last seen 5 minutes ago.
+- Last seen 2 hours ago.
+- Last seen 1 day ago.
+
+Do not permanently display Active just because the application was opened once.
+
+Update activity information when the application enters the foreground.
+
+Handle backgrounding, app closure, network disconnection, and device inactivity correctly.
+
+Use a reasonable heartbeat or activity-update mechanism.
+
+Avoid excessive Firebase requests or unnecessary background network activity.
+
+Do not rely only on the Android device clock for authoritative timestamps when server timestamps are available.
+
+30. Track How Long Each User Has Used STORE PRO
+
+I want to see how long each registered device has been using my application.
+
+Track:
+
+- First registered date.
+- First application launch date.
+- Total elapsed usage period.
+- Last seen date.
+
+For example:
+
+First Used: 15 November 2026
+
+Using STORE PRO: 6 Days
+
+Last Seen: Just now
+
+Calculate the usage duration using the original registration timestamp.
+
+Do not reset the first-used date whenever the user opens the application.
+
+Do not create a new device record on every launch.
+
+Keep the usage duration accurate.
+
+31. Accurate Device Dashboard Statistics
+
+The existing dashboard currently displays:
+
+- Total Devices.
+- Active Now.
+- Offline.
+- Blocked.
+
+Keep these four statistics and their existing visual design.
+
+However, calculate them using ONLY genuine registered STORE PRO devices.
+
+Total Devices
+
+Count all genuine registered device installations.
+
+Exclude fake, duplicate, emulator and testing records.
+
+Active Now
+
+Count only genuine devices that currently meet the online/active criteria.
+
+Offline
+
+Count genuine registered devices that are currently offline.
+
+Blocked
+
+Count genuine registered devices that have been blocked by the administrator.
+
+All four numbers must be calculated from the actual backend records.
+
+Do not use hardcoded numbers.
+
+Do not display sample statistics.
+
+Ensure that:
+
+Total Devices = Active Devices + Offline Devices
+
+Blocked status should be represented accurately without incorrectly duplicating device counts.
+
+32. Automatic Device Updates – No Manual Refresh Required
+
+I want the Device Dashboard to update automatically.
+
+I do not want to depend on manually pressing a Refresh button to discover newly registered devices.
+
+Required behavior:
+
+- When a genuine user installs and opens STORE PRO, register that device.
+- When registration succeeds, the new device should appear automatically in the administrator's dashboard.
+- When an existing device comes online, update its status automatically.
+- When a device becomes offline, update its status automatically.
+- Update the dashboard statistics automatically.
+- Update the device's last-seen information automatically.
+
+Use the existing backend's real-time update capabilities where appropriate.
+
+If Firebase Firestore is already being used, use an appropriate real-time listener such as snapshot listeners.
+
+Avoid unnecessary repeated polling.
+
+Remove the manual Refresh button from the Device Dashboard if automatic real-time updating is implemented successfully.
+
+The dashboard must not require manual refresh to show newly registered devices or status changes.
+
+Do not remove automatic updates merely to hide the Refresh button.
+
+33. Preserve Block, Unblock and Delete Functionality
+
+This is extremely important.
+
+I want all existing device management controls to remain available.
+
+The current screenshot shows:
+
+- Details.
+- Block.
+- Delete.
+
+Preserve these controls and their functionality.
+
+Block
+
+When the administrator taps Block:
+
+- Block the selected genuine device.
+- Update its status in the backend.
+- Display Blocked status.
+- Prevent the blocked installation from accessing protected application features according to the existing access-control rules.
+- Do not block unrelated devices.
+
+Unblock
+
+When a device is already blocked:
+
+- Show an Unblock option instead of Block.
+- Allow the administrator to unblock that specific device.
+- Update its backend status.
+- Restore access according to the existing application rules.
+- Do not affect other devices.
+
+Delete
+
+When the administrator taps Delete:
+
+- Show an appropriate confirmation dialog.
+- Delete the selected device registration record.
+- Update the dashboard statistics automatically.
+- Remove the device from the visible device list.
+- Do not accidentally delete other users or devices.
+
+Keep the existing red Delete icon and the current Block button design.
+
+Do not remove these management features.
+
+34. Secure Device Management and Admin Permissions
+
+Device management is an administrator-level feature.
+
+Ensure that:
+
+- Only authorized administrators can access the Device Dashboard.
+- Regular users cannot view all registered devices.
+- Regular users cannot block devices.
+- Regular users cannot unblock devices.
+- Regular users cannot delete device records.
+- Device registration cannot grant administrator privileges.
+- Blocking and unblocking must be validated by backend security rules.
+- Device records cannot be modified arbitrarily by unauthorized users.
+
+Do not rely only on hiding administrator buttons in the UI.
+
+Enforce permissions through the existing backend security architecture.
+
+35. Device Search Functionality
+
+Preserve the existing device search field.
+
+It should search only genuine registered devices.
+
+Allow searching by:
+
+- Device display name.
+- Manufacturer.
+- Model number.
+- Device brand.
+- User account, where available.
+
+Do not return emulator, Robolectric, testing, or fake device records.
+
+Keep the existing search field design.
+
+36. Device Data Integrity and Duplicate Prevention
+
+Inspect the existing device registration database and identify why multiple unwanted records are appearing.
+
+Correct the underlying problem.
+
+Requirements:
+
+- One installation should have one stable registration record.
+- Repeated application launches should update the existing record.
+- Repeated heartbeat requests should not create duplicate devices.
+- Emulator and automated testing records must not enter the production device list.
+- Deleted records must not immediately reappear unless a genuine new registration occurs.
+- Statistics must not count duplicate registrations.
+- Existing genuine user records should be preserved wherever possible.
+
+Do not blindly delete the entire device database.
+
+Do not erase legitimate registered user information.
+
+Clean up confirmed fake or testing records carefully and safely.
+
+Use a clear distinction between production device records and development/testing records.
+
+Do not rely solely on a model-name blacklist for identifying fake devices. Use appropriate build, environment and registration validation checks as well.
+
+If a device's authenticity cannot be established reliably, do not falsely label it as a genuine user device.
+
+37. Preserve the Existing Device Dashboard UI
+
+I want the current Device Dashboard design to remain visually consistent with the screenshot.
+
+Preserve:
+
+- Existing Device tab.
+- Existing dark navy background.
+- Existing dashboard cards.
+- Existing Total Devices card.
+- Existing Active Now card.
+- Existing Offline card.
+- Existing Blocked card.
+- Existing device search field.
+- Existing device information cards.
+- Existing Details dropdown.
+- Existing Block button style.
+- Existing Delete icon.
+- Existing overall spacing and layout.
+- Existing bottom navigation.
+
+Do not redesign the entire Device Dashboard.
+
+Only make the changes required for genuine device detection, automatic updates, accurate information and correct management functionality.
+
+The device cards should continue using the same existing visual design while displaying real user devices instead of testing records.
+
+38. Final Device Dashboard Expected Result
+
+The final dashboard should behave like this:
+
+Example:
+
+Live Device Dashboard
+
+Total Devices: 3
+
+Active Now: 1
+
+Offline: 1
+
+Blocked: 1
+
+Device Card 1:
+
+Hasim's A14
+
+Realme RMX5061
+
+Realme · Last seen just now
+
+Active | Logged In
+
+Details | Block | Delete
+
+Device Card 2:
+
+Actual User Device Model
+
+Actual Manufacturer and Model Number
+
+Last seen 2 hours ago
+
+Offline | Guest
+
+Details | Block | Delete
+
+Device Card 3:
+
+Actual User Device Model
+
+Actual Manufacturer and Model Number
+
+Last seen 1 day ago
+
+Blocked
+
+Details | Unblock | Delete
+
+These are illustrative examples only.
+
+The actual device names, statistics, statuses and details must come from genuine backend registrations.
+
+Never hardcode these example values.
+
+Most importantly: No robolectric, sdk_gphone64_arm64, Android emulator, fake testing device, dummy device or artificial user record should appear in the production Device Dashboard.
+
+---
+
+PART 5: FINAL MASTER IMPLEMENTATION INSTRUCTIONS
+
+Before making any modifications, carefully inspect the entire existing project and understand its current implementation.
+
+Follow these priorities:
+
+PRIORITY 1 – Animated Banner
+
+- Correct HASHIM to HASIM.
+- Correct HASHIM APK to HASIM APK.
+- Remove STORE PRO · 3D TRENDING SHOWCASE.
+- Remove the Sound/Mute button.
+- Disable all click and touch interactions inside the Animated Banner.
+- Preserve the original animation.
+
+PRIORITY 2 – Application Performance
+
+- Optimize the entire application.
+- Fix actual performance bottlenecks.
+- Eliminate noticeable lag and stuttering.
+- Improve scrolling, transitions and animations.
+- Optimize memory and background operations.
+
+PRIORITY 3 – WhatsApp Integration
+
+- Add WhatsApp icon to the left side of the existing profile picture.
+- Connect it to the exact WhatsApp group invitation.
+- Make it clickable and functional.
+
+PRIORITY 4 – Telegram Integration
+
+- Add Telegram icon to the right side of the existing profile picture.
+- Connect it to the exact Telegram channel.
+- Make it clickable and functional.
+
+PRIORITY 5 – Real Device Detection
+
+- Remove fake and testing device records from production device listings.
+- Register only genuine STORE PRO application installations after actual application use.
+- Detect real device model and manufacturer.
+- Display detailed device information.
+- Track first use and total usage duration.
+- Display accurate Active and Offline statuses.
+- Update the dashboard automatically.
+- Preserve Block, Unblock and Delete functionality.
+- Preserve the existing Device Dashboard design.
+
+STRICT PROJECT PRESERVATION RULES
+
+These instructions are mandatory:
+
+1. Do not redesign the existing application.
+2. Do not replace the existing UI.
+3. Do not change existing colors, fonts, icons, or layouts unnecessarily.
+4. Do not remove existing features.
+5. Do not modify unrelated application screens.
+6. Do not change Firebase configuration unnecessarily.
+7. Do not modify database structures unnecessarily.
+8. Do not break existing authentication or navigation.
+9. Do not recreate the existing Animated Banner.
+10. Do not replace existing animations with static images.
+11. Do not introduce unnecessary dependencies.
+12. Do not modify existing working functionality.
+13. Preserve all existing project files and architecture wherever possible.
+14. Make changes only where required by this document.
+15. Preserve existing genuine user data.
+
+IMPLEMENTATION AND VERIFICATION
+
+Before editing:
+
+- Inspect the actual source code.
+- Identify the exact files responsible for each requested feature.
+- Understand the existing UI and event-handling logic.
+- Inspect the existing device registration system.
+- Inspect the backend device records and database queries.
+- Identify the source of fake and duplicate device entries.
+- Inspect existing administrator permissions.
+- Make minimal and targeted changes.
+
+After editing:
+
+- Verify both corrected banner text locations.
+- Verify that the subtitle is completely removed.
+- Verify that the Sound/Mute button is completely removed.
+- Verify that the entire banner is non-clickable.
+- Verify that the original animation still works.
+- Verify that WhatsApp opens the correct group invitation.
+- Verify that Telegram opens the correct channel.
+- Verify that both social icons appear beside the existing profile picture.
+- Verify that genuine devices are registered correctly.
+- Verify that emulator and testing records are excluded from production.
+- Verify that actual device models and details are displayed.
+- Verify that online/offline statuses update correctly.
+- Verify that usage duration is accurate.
+- Verify that Block and Unblock work correctly.
+- Verify that Delete works correctly.
+- Verify that unauthorized users cannot manage devices.
+- Verify that dashboard statistics are accurate.
+- Verify that automatic updates work without manual refresh.
+- Verify that the existing Device Dashboard design is preserved.
+- Verify that the application runs smoothly.
+- Build the project successfully.
+- Fix errors introduced by your modifications.
+
+Do not claim that a feature is implemented or tested unless you have actually completed the work.
+
+FINAL GOAL
+
+I want my existing STORE PRO application to remain visually and functionally the same, except for the explicitly requested changes.
+
+The final application must have:
+
+1. A corrected, non-clickable Animated Banner with the original animation preserved.
+2. No subtitle inside the Animated Banner.
+3. No Sound/Mute button inside the Animated Banner.
+4. Improved overall application smoothness and performance.
+5. A WhatsApp icon that opens my WhatsApp group.
+6. A Telegram icon that opens my Telegram channel.
+7. A genuine Device Detection System.
+8. Only actual STORE PRO users' registered devices in the Device Dashboard.
+9. Real manufacturer and model information for each device.
+10. Accurate first-used date and usage duration.
+11. Accurate Active, Offline, Logged In and Guest statuses.
+12. Automatic real-time dashboard updates.
+13. Fully functional Block, Unblock and Delete controls.
+14. No fake, Robolectric, SDK emulator, testing or dummy devices.
+15. All existing unrelated application features preserved.
+
+FINAL NON-NEGOTIABLE INSTRUCTION:
+
+Implement ALL FOUR major tasks directly in my EXISTING STORE PRO PROJECT.
+
+Do not start a new project.
+
+Do not redesign the application.
+
+Do not make unnecessary changes.
+
+Do not remove existing working features.
+
+Preserve the existing UI, design, features, functionality and project architecture.
+
+Only implement the exact modifications, integrations, device management improvements and performance optimizations described in this document.

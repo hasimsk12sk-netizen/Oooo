@@ -1,0 +1,70 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email == 'hasimsk12345678sk@gmail.com' &&
+        request.auth.token.email_verified == true;
+    }
+
+    function isValidApkUpload() {
+      return request.resource != null &&
+        request.resource.size > 0 &&
+        request.resource.size <= 300 * 1024 * 1024 &&
+        (
+          request.resource.contentType == 'application/vnd.android.package-archive' ||
+          request.resource.contentType == 'application/octet-stream'
+        );
+    }
+
+    function isPublishedFile() {
+      return resource != null &&
+        (
+          resource.metadata == null ||
+          !('published' in resource.metadata) ||
+          resource.metadata.published == 'true'
+        );
+    }
+
+    // Default deny catch-all protecting all unspecified and restricted paths
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    // STORE PRO self-update APKs:
+    // - Only verified administrator can upload, overwrite, or delete APK files
+    // - Published update APKs can be downloaded; unpublished APKs are admin-only
+    match /releases/{releaseFolder}/{fileName} {
+      allow read: if fileName.matches('.*\\.apk$') && (isAdmin() || isPublishedFile());
+      allow create, update: if isAdmin() &&
+        fileName.matches('.*\\.apk$') &&
+        isValidApkUpload();
+      allow delete: if isAdmin();
+    }
+
+    // Published marketplace application APKs:
+    // - Only verified administrator can upload, overwrite, or delete APKs
+    // - Users can download published APKs; unpublished/draft metadata stays admin-only
+    match /applications/published/{appFolder}/{fileName} {
+      allow read: if fileName.matches('.*\\.apk$') && (isAdmin() || isPublishedFile());
+      allow create, update: if isAdmin() &&
+        fileName.matches('.*\\.apk$') &&
+        isValidApkUpload();
+      allow delete: if isAdmin();
+    }
+
+    // Unpublished drafts & restricted binaries: strictly administrator-only
+    match /applications/restricted/{allPaths=**} {
+      allow read, write: if isAdmin();
+    }
+
+    match /applications/drafts/{allPaths=**} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

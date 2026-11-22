@@ -1,0 +1,8 @@
+{
+  "name": "STORE PRO",
+  "description": "Premium Android Application Marketplace with Firebase backend and APK downloads",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "storepro-functions",
+  "description": "Server-side Firebase Cloud Functions for STORE PRO push notifications and release automation",
+  "scripts": {
+    "serve": "firebase emulators:start --only functions",
+    "shell": "firebase functions:shell",
+    "test": "node --test index.test.js",
+    "deploy": "firebase deploy --only functions"
+  },
+  "engines": {
+    "node": "22"
+  },
+  "main": "index.js",
+  "dependencies": {
+    "firebase-admin": "^13.0.1",
+    "firebase-functions": "^6.1.1"
+  },
+  "private": true
+}

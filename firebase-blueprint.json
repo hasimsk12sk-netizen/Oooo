@@ -1,0 +1,247 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated user profile document scoped to Firebase Auth UID.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "description": "User email address" },
+        "displayName": { "type": "string", "description": "Display name" },
+        "username": { "type": "string", "description": "Marketplace handle" },
+        "avatarUrl": { "type": "string", "description": "Optional profile avatar URL" }
+      },
+      "required": ["userId", "email", "displayName", "username"]
+    },
+    "ApplicationItem": {
+      "title": "ApplicationItem",
+      "description": "Published Android application listing managed exclusively by authorized administrators.",
+      "type": "object",
+      "properties": {
+        "appId": { "type": "string", "description": "Unique application identifier" },
+        "appName": { "type": "string", "description": "Application display title" },
+        "developerName": { "type": "string", "description": "Publisher or studio name" },
+        "version": { "type": "string", "description": "Version string" },
+        "description": { "type": "string", "description": "Application description" },
+        "iconUrl": { "type": "string", "description": "Public HTTP/HTTPS icon URL" },
+        "apkUrl": { "type": "string", "description": "Public HTTP/HTTPS APK or file-hosting download link" },
+        "screenshots": { "type": "array", "description": "List of public HTTP/HTTPS screenshot URLs" },
+        "whatsNew": { "type": "string", "description": "Release notes" },
+        "privacyPolicyUrl": { "type": "string", "description": "Optional privacy policy URL" },
+        "packageId": { "type": "string", "description": "Android package identifier" },
+        "fileSizeBytes": { "type": "number", "description": "Estimated APK file size in bytes" },
+        "downloads": { "type": "number", "description": "Total download counter" },
+        "averageRating": { "type": "number", "description": "Computed average user star rating" },
+        "ratingCount": { "type": "number", "description": "Total review count" },
+        "status": { "type": "string", "enum": ["published", "draft"] },
+        "verificationStatus": { "type": "string", "enum": ["verified", "pending"] },
+        "uploadedBy": { "type": "string", "description": "Authorized admin UID" },
+        "createdAt": { "type": "number", "description": "Creation epoch milliseconds" }
+      },
+      "required": [
+        "appId",
+        "appName",
+        "developerName",
+        "version",
+        "description",
+        "iconUrl",
+        "apkUrl",
+        "screenshots",
+        "whatsNew",
+        "privacyPolicyUrl",
+        "packageId",
+        "fileSizeBytes",
+        "downloads",
+        "averageRating",
+        "ratingCount",
+        "status",
+        "verificationStatus",
+        "uploadedBy",
+        "createdAt"
+      ]
+    },
+    "ReviewItem": {
+      "title": "ReviewItem",
+      "description": "User rating and review for an application.",
+      "type": "object",
+      "properties": {
+        "reviewId": { "type": "string" },
+        "appId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userAvatar": { "type": "string" },
+        "rating": { "type": "number" },
+        "comment": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["reviewId", "appId", "userId", "userName", "rating", "comment", "timestamp"]
+    },
+    "SavedAppItem": {
+      "title": "SavedAppItem",
+      "description": "Bookmarked application saved in a user's personal library.",
+      "type": "object",
+      "properties": {
+        "appId": { "type": "string" },
+        "appName": { "type": "string" },
+        "developerName": { "type": "string" },
+        "iconUrl": { "type": "string" },
+        "version": { "type": "string" },
+        "savedAt": { "type": "number" }
+      },
+      "required": ["appId", "appName", "developerName", "iconUrl", "version", "savedAt"]
+    },
+    "DownloadItem": {
+      "title": "DownloadItem",
+      "description": "User download history entry.",
+      "type": "object",
+      "properties": {
+        "downloadId": { "type": "string" },
+        "appId": { "type": "string" },
+        "appName": { "type": "string" },
+        "version": { "type": "string" },
+        "iconUrl": { "type": "string" },
+        "downloadUrl": { "type": "string" },
+        "fileSize": { "type": "number" },
+        "localFilePath": { "type": "string" },
+        "downloadedAt": { "type": "number" }
+      },
+      "required": [
+        "downloadId",
+        "appId",
+        "appName",
+        "version",
+        "iconUrl",
+        "downloadUrl",
+        "fileSize",
+        "localFilePath",
+        "downloadedAt"
+      ]
+    },
+    "LiveUpdateRelease": {
+      "title": "LiveUpdateRelease",
+      "description": "Unified STORE PRO Live Update release and draft metadata managed exclusively by verified administrator.",
+      "type": "object",
+      "properties": {
+        "releaseId": { "type": "string", "description": "Unique release document identifier" },
+        "versionName": { "type": "string", "description": "Human-readable release versionName" },
+        "versionCode": { "type": "number", "description": "Monotonic integer build versionCode" },
+        "packageName": { "type": "string", "description": "Expected Android applicationId" },
+        "apkDownloadUrl": { "type": "string", "description": "HTTPS download URL for the verified APK artifact" },
+        "apkSize": { "type": "number", "description": "APK file size in bytes" },
+        "releaseNotes": { "type": "string", "description": "Markdown or plain-text changelog for users" },
+        "releaseDate": { "type": "string", "description": "Human-readable release date (YYYY-MM-DD)" },
+        "published": { "type": "boolean", "description": "True only when actively published for ordinary users" },
+        "releaseStatus": { "type": "string", "enum": ["PUBLISHED", "DRAFT", "ARCHIVED"], "description": "Lifecycle status of the release" },
+        "storagePath": { "type": "string", "description": "Firebase Storage object path" },
+        "apkSha256": { "type": "string", "description": "SHA-256 hex digest of verified APK binary" },
+        "signingSha256": { "type": "string", "description": "SHA-256 hex fingerprint of verified APK signing certificate" },
+        "publishedBy": { "type": "string", "description": "Authorized administrator Firebase Auth UID" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation/update" }
+      },
+      "required": [
+        "releaseId",
+        "versionName",
+        "versionCode",
+        "packageName",
+        "apkDownloadUrl",
+        "apkSize",
+        "releaseNotes",
+        "releaseDate",
+        "published",
+        "releaseStatus",
+        "publishedBy",
+        "updatedAt"
+      ]
+    },
+    "RegisteredDevice": {
+      "title": "RegisteredDevice",
+      "description": "Non-PII installation record for STORE PRO device management and remote blocking.",
+      "type": "object",
+      "properties": {
+        "installationId": { "type": "string", "description": "App-generated UUID installation identifier" },
+        "deviceName": { "type": "string", "description": "Human-readable device name" },
+        "deviceModel": { "type": "string", "description": "Device model name or number" },
+        "manufacturer": { "type": "string", "description": "Hardware manufacturer name" },
+        "brand": { "type": "string", "description": "Device brand name" },
+        "androidVersion": { "type": "string", "description": "Android OS release version" },
+        "sdkVersion": { "type": "number", "description": "Android API / SDK integer level" },
+        "deviceType": { "type": "string", "description": "Phone or Tablet classification" },
+        "accountStatus": { "type": "string", "enum": ["GUEST", "LOGGED_IN"], "description": "Current Gmail sign-in association status" },
+        "associatedUserId": { "type": "string", "description": "Optional Firebase Auth UID associated with this installation" },
+        "status": { "type": "string", "enum": ["ACTIVE", "BLOCKED"], "description": "Authorization status controlled by verified admin" },
+        "isAdminDevice": { "type": "boolean", "description": "Server-protected flag marking verified administrator devices" },
+        "appVersionCode": { "type": "number", "description": "Installed versionCode" },
+        "appVersionName": { "type": "string", "description": "Installed versionName" },
+        "registeredAt": { "type": "string", "format": "date-time", "description": "Server timestamp of initial registration (FieldValue.serverTimestamp())" },
+        "firstUsedAt": { "type": "string", "format": "date-time", "description": "Immutable first-launch timestamp (FieldValue.serverTimestamp())" },
+        "lastActiveAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last heartbeat (FieldValue.serverTimestamp())" }
+      },
+      "required": ["installationId", "deviceName", "deviceModel", "status", "appVersionCode", "appVersionName", "registeredAt", "lastActiveAt"]
+    },
+
+    "AdminRoleRecord": {
+      "title": "AdminRoleRecord",
+      "description": "Server-verified administrator role record.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin"] },
+        "active": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role", "active", "updatedAt"]
+    },
+    "FcmTokenRecord": {
+      "title": "FcmTokenRecord",
+      "description": "FCM push notification registration token scoped by installationId.",
+      "type": "object",
+      "properties": {
+        "installationId": { "type": "string" },
+        "token": { "type": "string" },
+        "notificationsAllowed": { "type": "boolean" },
+        "appVersionCode": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["installationId", "token", "notificationsAllowed", "appVersionCode", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/applications/{appId}": {
+      "schema": { "$ref": "#/entities/ApplicationItem" },
+      "description": "Publicly readable marketplace applications; creation, catalog updates, and deletion restricted to verified admin."
+    },
+    "/reviews/{reviewId}": {
+      "schema": { "$ref": "#/entities/ReviewItem" },
+      "description": "Publicly readable application reviews; creation, update, and deletion restricted to authenticated review author."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user profile documents restricted strictly to the owning user."
+    },
+    "/users/{userId}/saved_apps/{appId}": {
+      "schema": { "$ref": "#/entities/SavedAppItem" },
+      "description": "User bookmarked applications subcollection restricted to owner."
+    },
+    "/users/{userId}/downloads/{downloadId}": {
+      "schema": { "$ref": "#/entities/DownloadItem" },
+      "description": "User download history subcollection restricted to owner."
+    },
+    "/live_updates/{releaseId}": {
+      "schema": { "$ref": "#/entities/LiveUpdateRelease" },
+      "description": "Unified STORE PRO Live Update releases and drafts. Ordinary users read only published == true; verified administrator manages drafts, publishing, and archives."
+    },
+    "/registered_devices/{installationId}": {
+      "schema": { "$ref": "#/entities/RegisteredDevice" },
+      "description": "Device registrations and remote block status. Installations can read/heartbeat their own record without altering status; admin lists, blocks/unblocks, and deletes."
+    },
+    "/admin_roles/{uid}": {
+      "schema": { "$ref": "#/entities/AdminRoleRecord" },
+      "description": "Server-side admin authorization documents."
+    },
+    "/fcm_tokens/{installationId}": {
+      "schema": { "$ref": "#/entities/FcmTokenRecord" },
+      "description": "Device FCM tokens for automated release push notifications."
+    }
+  }
+}

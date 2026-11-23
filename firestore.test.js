@@ -300,7 +300,7 @@ test("Legacy application documents with Timestamp createdAt and omitted optional
   );
 });
 
-test("Live Updates enforce admin-only writes and isolate unpublished drafts from ordinary users and guests", async () => {
+test("Live Updates and immutable Update History enforce strict admin-only read/write isolation", async () => {
   const guestDb = testEnv.unauthenticatedContext().firestore();
   const userDb = testEnv
     .authenticatedContext(USER_ALICE, { email: "alice@example.com", email_verified: true })
@@ -314,16 +314,22 @@ test("Live Updates enforce admin-only writes and isolate unpublished drafts from
     releaseId: "release_v3",
     versionName: "1.2",
     versionCode: 3,
+    buildNumber: 3,
     packageName: "com.aistudio.storepro.vqxknp",
     apkDownloadUrl: "https://firebasestorage.googleapis.com/v0/b/bucket/o/storepro_v3.apk",
     apkSize: 25869902,
+    apkFileName: "STORE_PRO_v1.2_build3.apk",
     releaseNotes: "New Live Update system release.",
-    releaseDate: "2026-11-21",
+    changelog: "New Live Update system release.",
+    releaseDate: "2026-11-22",
+    mandatoryUpdate: false,
     published: true,
     releaseStatus: "PUBLISHED",
-    storagePath: "releases/live_v3/storepro_v3.apk",
+    storagePath: "STORE_PRO/RELEASES/v1.2_b3/STORE_PRO_v1.2_build3.apk",
     apkSha256: "abcdef123456",
     signingSha256: "123456abcdef",
+    adminEmail: ADMIN_EMAIL,
+    historyId: "hist_v3_1000",
     publishedBy: ADMIN_UID,
     updatedAt: now,
   };
@@ -336,7 +342,7 @@ test("Live Updates enforce admin-only writes and isolate unpublished drafts from
     apkDownloadUrl: "",
     apkSize: 0,
     releaseNotes: "Upcoming draft build",
-    releaseDate: "2026-11-22",
+    releaseDate: "2026-11-23",
     published: false,
     releaseStatus: "DRAFT",
     storagePath: "",
@@ -346,7 +352,7 @@ test("Live Updates enforce admin-only writes and isolate unpublished drafts from
     updatedAt: now,
   };
 
-  // Guests and regular users CANNOT create, update, or delete live_updates
+  // Guests and regular users CANNOT create, read, or delete live_updates (strictly Admin-only)
   await assertFails(guestDb.collection("live_updates").doc("release_v3").set(publishedRelease));
   await assertFails(userDb.collection("live_updates").doc("release_v3").set(publishedRelease));
 
@@ -354,7 +360,7 @@ test("Live Updates enforce admin-only writes and isolate unpublished drafts from
   await assertSucceeds(adminDb.collection("live_updates").doc("release_v3").set(publishedRelease));
   await assertSucceeds(adminDb.collection("live_updates").doc("release_v4").set(draftRelease));
 
-  // Invalid state combinations (published=true without URL or published/releaseStatus mismatch) fail even for admin
+  // Invalid state combinations fail even for admin
   await assertFails(
     adminDb.collection("live_updates").doc("release_bad").set({
       ...draftRelease,
@@ -363,29 +369,56 @@ test("Live Updates enforce admin-only writes and isolate unpublished drafts from
       releaseStatus: "DRAFT",
     })
   );
-  await assertFails(
-    adminDb.collection("live_updates").doc("release_v3").update({
-      versionCode: 0,
-    })
-  );
 
-  // Ordinary users and guests CAN query published == true and get published doc
-  await assertSucceeds(guestDb.collection("live_updates").where("published", "==", true).get());
-  await assertSucceeds(userDb.collection("live_updates").where("published", "==", true).get());
-  await assertSucceeds(guestDb.collection("live_updates").doc("release_v3").get());
+  // Ordinary users and guests CANNOT read even published live_updates docs
+  await assertFails(guestDb.collection("live_updates").where("published", "==", true).get());
+  await assertFails(userDb.collection("live_updates").where("published", "==", true).get());
+  await assertFails(guestDb.collection("live_updates").doc("release_v3").get());
+  await assertFails(userDb.collection("live_updates").doc("release_v3").get());
 
-  // Ordinary users and guests CANNOT list all docs (which could expose drafts) or get DRAFT doc
-  await assertFails(guestDb.collection("live_updates").get());
-  await assertFails(guestDb.collection("live_updates").doc("release_v4").get());
-  await assertFails(userDb.collection("live_updates").doc("release_v4").get());
-
-  // Admin can list all docs (Published + Draft + Archived) and delete drafts
+  // Admin can list all docs and delete drafts
   const adminAll = await assertSucceeds(adminDb.collection("live_updates").get());
   if (adminAll.docs.length !== 2) {
     throw new Error("Expected admin to see both published and draft releases");
   }
-  await assertFails(userDb.collection("live_updates").doc("release_v4").delete());
   await assertSucceeds(adminDb.collection("live_updates").doc("release_v4").delete());
+
+  // Immutable Update History record
+  const historyDoc = {
+    historyId: "hist_v3_1000",
+    versionName: "1.2",
+    versionCode: 3,
+    buildNumber: 3,
+    previousVersion: "1.1 (Build 2)",
+    releaseDate: "2026-11-22",
+    publicationTime: "10:00:00",
+    releaseTimestamp: now,
+    releaseNotes: "Release v1.2 notes",
+    changelog: "Bug fixes and improvements",
+    mandatoryUpdate: false,
+    publicationStatus: "PUBLISHED",
+    apkFileName: "STORE_PRO_v1.2_build3.apk",
+    apkFileSize: 25869902,
+    apkDownloadUrl: "https://firebasestorage.googleapis.com/v0/b/bucket/o/STORE_PRO_v1.2_build3.apk",
+    apkStoragePath: "STORE_PRO/RELEASES/v1.2_b3/STORE_PRO_v1.2_build3.apk",
+    packageName: "com.aistudio.storepro.vqxknp",
+    signingCertificateFingerprint: "123456abcdef",
+    apkAvailable: true,
+    adminUid: ADMIN_UID,
+    adminEmail: ADMIN_EMAIL,
+    publishedBy: ADMIN_UID,
+  };
+
+  await assertFails(guestDb.collection("store_pro_update_history").doc("hist_v3_1000").set(historyDoc));
+  await assertFails(userDb.collection("store_pro_update_history").doc("hist_v3_1000").set(historyDoc));
+  await assertSucceeds(adminDb.collection("store_pro_update_history").doc("hist_v3_1000").set(historyDoc));
+  await assertFails(userDb.collection("store_pro_update_history").get());
+  await assertSucceeds(adminDb.collection("store_pro_update_history").get());
+
+  // Admin can update apkAvailable reachability flag ONLY; permanent delete or metadata tampering is blocked
+  await assertSucceeds(adminDb.collection("store_pro_update_history").doc("hist_v3_1000").update({ apkAvailable: false }));
+  await assertFails(adminDb.collection("store_pro_update_history").doc("hist_v3_1000").update({ versionName: "9.9" }));
+  await assertFails(adminDb.collection("store_pro_update_history").doc("hist_v3_1000").delete());
 });
 
 test("Device management rules enforce self-registration/heartbeat without status tampering and admin-only listing/blocking/deletion", async () => {
@@ -488,11 +521,32 @@ test("Device management rules enforce self-registration/heartbeat without status
   await assertSucceeds(
     guestDb.collection("registered_devices").doc(installId).update({
       brand: "Google",
+      modelCode: "husky",
+      productName: "husky",
+      cpuArch: "arm64-v8a",
+      ramInfo: "12.00 GB",
+      totalRam: "12.00 GB",
+      availableRam: "5.40 GB",
+      installedAt: Date.now() - 50000,
+      deviceFingerprint: "sha256_fp_pixel8_unique_01",
+      legacyInstallationId: null,
+      screenResolution: "1344 x 2992",
+      screenDensity: "480 dpi",
+      connectionType: "WiFi",
       androidVersion: "15",
       sdkVersion: 35,
       deviceType: "Phone",
       lastActiveAt: new Date(Date.now() - 1000),
-      appVersionCode: 2,
+      lastSyncAt: new Date(Date.now() - 1000),
+      appVersionCode: 3,
+      appVersionName: "1.2",
+    })
+  );
+
+  // Non-admin cannot overwrite an already-set deviceFingerprint
+  await assertFails(
+    guestDb.collection("registered_devices").doc(installId).update({
+      deviceFingerprint: "tampered_other_device_fp",
     })
   );
 
@@ -501,6 +555,7 @@ test("Device management rules enforce self-registration/heartbeat without status
     userDb.collection("registered_devices").doc(installId).update({
       accountStatus: "LOGGED_IN",
       associatedUserId: USER_ALICE,
+      associatedEmail: "alice@example.com",
       lastActiveAt: new Date(Date.now() - 800),
     })
   );

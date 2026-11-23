@@ -7,10 +7,13 @@ import android.os.Build
 import android.os.StatFs
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import com.example.data.model.HistoryApkDownloadStatus
+import com.example.data.model.HistoryDownloadState
 import com.example.data.model.InstalledAppDetails
 import com.example.data.model.LiveUpdateDashboardState
 import com.example.data.model.LiveUpdateRelease
 import com.example.data.model.LiveUpdateStatus
+import com.example.data.model.UpdateHistoryRecord
 import com.example.data.model.VersionComparisonOutcome
 import com.example.data.repository.LiveUpdateRepository
 import kotlinx.coroutines.CancellationException
@@ -38,6 +41,18 @@ interface LiveUpdateInstallVerifier {
         expectedRelease: LiveUpdateRelease,
         installed: InstalledAppDetails
     ): ApkVerificationResult
+
+    fun verifyHistoricalApk(
+        context: Context,
+        downloadedFile: File,
+        historyRecord: UpdateHistoryRecord,
+        installed: InstalledAppDetails
+    ): ApkVerificationResult = LiveUpdateApkVerifier.verifyHistoricalInstallCompatibility(
+        context = context,
+        downloadedFile = downloadedFile,
+        historyRecord = historyRecord,
+        installed = installed
+    )
 }
 
 object DefaultLiveUpdateInstallVerifier : LiveUpdateInstallVerifier {
@@ -81,15 +96,17 @@ class LiveUpdateController(
     )
     val state: StateFlow<LiveUpdateDashboardState> = _state.asStateFlow()
 
+    private val _historyDownloads = MutableStateFlow<Map<String, HistoryDownloadState>>(emptyMap())
+    val historyDownloads: StateFlow<Map<String, HistoryDownloadState>> = _historyDownloads.asStateFlow()
+
     private var downloadJob: Job? = null
+    private val historyJobs = mutableMapOf<String, Job>()
 
     companion object {
         private fun defaultClient(): OkHttpClient {
-            return OkHttpClient.Builder()
+            return com.example.util.StoreProNetworkClient.baseClient.newBuilder()
                 .connectTimeout(25, TimeUnit.SECONDS)
                 .readTimeout(60, TimeUnit.SECONDS)
-                .followRedirects(true)
-                .followSslRedirects(true)
                 .build()
         }
 
@@ -543,6 +560,209 @@ class LiveUpdateController(
     private fun cleanupPartialFiles() {
         runCatching {
             updateDir.listFiles()?.filter { it.name.endsWith(".tmp") }?.forEach { it.delete() }
+        }
+    }
+
+    fun downloadHistoricalApk(
+        record: UpdateHistoryRecord,
+        scope: CoroutineScope,
+        onCompleted: (Result<File>) -> Unit = {}
+    ) {
+        val url = record.apkDownloadUrl.trim()
+        if (!url.startsWith("https://") && !url.startsWith("http://")) {
+            updateHistoryDownloadState(
+                record.historyId,
+                HistoryDownloadState(
+                    historyId = record.historyId,
+                    status = HistoryApkDownloadStatus.FAILED,
+                    errorMessage = "Historical APK download URL is unavailable or invalid."
+                )
+            )
+            onCompleted(Result.failure(IllegalArgumentException("Invalid historical APK download URL.")))
+            return
+        }
+
+        historyJobs[record.historyId]?.cancel()
+        historyJobs[record.historyId] = scope.launch {
+            val safeFileName = record.apkFileName.ifBlank {
+                "STORE_PRO_v${record.versionName}_build${record.versionCode}.apk"
+            }.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+            val targetFile = File(updateDir, "history_${record.historyId}_$safeFileName")
+            val tempFile = File(updateDir, "history_${record.historyId}.apk.tmp")
+
+            updateHistoryDownloadState(
+                record.historyId,
+                HistoryDownloadState(
+                    historyId = record.historyId,
+                    status = HistoryApkDownloadStatus.DOWNLOADING,
+                    progressPercent = 0,
+                    totalBytes = record.apkFileSize.coerceAtLeast(0L)
+                )
+            )
+
+            try {
+                withContext(Dispatchers.IO) {
+                    updateDir.mkdirs()
+                    if (tempFile.exists()) tempFile.delete()
+                    val req = Request.Builder()
+                        .url(url)
+                        .header("User-Agent", "STOREPRO-HistoryArchive/2.0")
+                        .build()
+
+                    httpClient.newCall(req).execute().use { resp ->
+                        if (!resp.isSuccessful) {
+                            throw IOException("Server returned HTTP ${resp.code} while downloading APK.")
+                        }
+                        val body = resp.body ?: throw IOException("Empty download response.")
+                        val total = body.contentLength().takeIf { it > 0L } ?: record.apkFileSize.coerceAtLeast(0L)
+                        var bytes = 0L
+                        var checkedMagic = false
+                        body.byteStream().use { input ->
+                            FileOutputStream(tempFile).use { output ->
+                                val buf = ByteArray(16 * 1024)
+                                var read = input.read(buf)
+                                while (read != -1) {
+                                    if (!checkedMagic && read >= 4) {
+                                        checkedMagic = true
+                                        if (buf[0] != 0x50.toByte() || buf[1] != 0x4B.toByte()) {
+                                            throw IOException("Downloaded file is not a valid APK package.")
+                                        }
+                                    }
+                                    output.write(buf, 0, read)
+                                    bytes += read
+                                    val pct = if (total > 0L) ((bytes * 100L) / total).toInt().coerceIn(0, 100) else 0
+                                    updateHistoryDownloadState(
+                                        record.historyId,
+                                        HistoryDownloadState(
+                                            historyId = record.historyId,
+                                            status = HistoryApkDownloadStatus.DOWNLOADING,
+                                            progressPercent = pct,
+                                            downloadedBytes = bytes,
+                                            totalBytes = total
+                                        )
+                                    )
+                                    read = input.read(buf)
+                                }
+                                output.flush()
+                            }
+                        }
+                        if (bytes <= 0L) throw IOException("Downloaded APK is empty.")
+                        if (!tempFile.renameTo(targetFile)) {
+                            tempFile.copyTo(targetFile, overwrite = true)
+                            tempFile.delete()
+                        }
+                    }
+                }
+
+                updateHistoryDownloadState(
+                    record.historyId,
+                    HistoryDownloadState(
+                        historyId = record.historyId,
+                        status = HistoryApkDownloadStatus.READY,
+                        progressPercent = 100,
+                        downloadedBytes = targetFile.length(),
+                        totalBytes = targetFile.length(),
+                        localApkPath = targetFile.absolutePath
+                    )
+                )
+                onCompleted(Result.success(targetFile))
+            } catch (ce: CancellationException) {
+                tempFile.delete()
+                throw ce
+            } catch (e: Exception) {
+                tempFile.delete()
+                targetFile.delete()
+                updateHistoryDownloadState(
+                    record.historyId,
+                    HistoryDownloadState(
+                        historyId = record.historyId,
+                        status = HistoryApkDownloadStatus.FAILED,
+                        errorMessage = e.localizedMessage ?: "Failed to download historical APK."
+                    )
+                )
+                onCompleted(Result.failure(e))
+            }
+        }
+    }
+
+    fun cancelHistoricalDownload(historyId: String) {
+        historyJobs[historyId]?.cancel()
+        historyJobs.remove(historyId)
+        updateHistoryDownloadState(
+            historyId,
+            HistoryDownloadState(historyId = historyId, status = HistoryApkDownloadStatus.IDLE)
+        )
+    }
+
+    fun buildHistoricalInstallActionIntent(record: UpdateHistoryRecord): Intent? {
+        val state = _historyDownloads.value[record.historyId]
+        val path = state?.localApkPath ?: return null
+        val apkFile = File(path)
+        if (!apkFile.exists() || apkFile.length() <= 0L) return null
+
+        val installed = installVerifier.readInstalled(appContext)
+        val verification = installVerifier.verifyHistoricalApk(
+            context = appContext,
+            downloadedFile = apkFile,
+            historyRecord = record,
+            installed = installed
+        )
+        if (!verification.isValid) return null
+
+        if (!canInstallPackagesProvider(appContext) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            return Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                data = Uri.parse("package:${appContext.packageName}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        }
+
+        val apkUri = FileProvider.getUriForFile(
+            appContext,
+            "${appContext.packageName}.provider",
+            apkFile
+        )
+        return Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(apkUri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+    }
+
+    fun launchHistoricalApkInstall(record: UpdateHistoryRecord): Result<Boolean> {
+        val state = _historyDownloads.value[record.historyId]
+        val path = state?.localApkPath
+            ?: return Result.failure(IllegalStateException("Download the APK for v${record.versionName} first."))
+        val apkFile = File(path)
+        if (!apkFile.exists() || apkFile.length() <= 0L) {
+            return Result.failure(IllegalStateException("Downloaded APK file is missing. Tap Download APK again."))
+        }
+
+        val installed = installVerifier.readInstalled(appContext)
+        val verification = installVerifier.verifyHistoricalApk(
+            context = appContext,
+            downloadedFile = apkFile,
+            historyRecord = record,
+            installed = installed
+        )
+        if (!verification.isValid) {
+            return Result.failure(
+                IllegalStateException(
+                    verification.errors.firstOrNull()
+                        ?: "This APK cannot be installed directly over the active build."
+                )
+            )
+        }
+
+        val intent = buildHistoricalInstallActionIntent(record)
+            ?: return Result.failure(IllegalStateException("Unable to prepare Android package installer intent."))
+        val isPermissionSettings = intent.action == Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES
+        context.startActivity(intent)
+        return Result.success(!isPermissionSettings)
+    }
+
+    private fun updateHistoryDownloadState(historyId: String, value: HistoryDownloadState) {
+        _historyDownloads.update { current ->
+            current.toMutableMap().apply { put(historyId, value) }
         }
     }
 

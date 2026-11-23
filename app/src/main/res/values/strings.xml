@@ -3,4 +3,7 @@
     <string name="live_update_button_title">STORE PRO LIVE UPDATE</string>
     <string name="live_update_dashboard_title">Live Update Center</string>
     <string name="live_update_admin_title">Admin Release Studio</string>
+    <string name="storepro_web_domain" translatable="false">gen-lang-client-0338531403.web.app</string>
+    <string name="storepro_secondary_web_domain" translatable="false">gen-lang-client-0338531403.firebaseapp.com</string>
+    <string name="storepro_download_url" translatable="false"></string>
 </resources>

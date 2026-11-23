@@ -39,6 +39,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,6 +47,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,6 +56,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.LiveUpdateDashboardState
 import com.example.data.model.LiveUpdateStatus
+import com.example.ui.components.RgbNeonPalette
+import com.example.ui.components.rememberLifecycleIsResumed
 import com.example.ui.theme.StoreProPrimaryGreen
 import com.example.ui.theme.StoreProSecondaryCyan
 
@@ -62,6 +67,10 @@ fun LiveUpdateButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val isResumed = rememberLifecycleIsResumed()
+    val reducedMotion = remember(context) { RgbNeonPalette.isReducedMotionEnabled(context) }
+
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
@@ -70,21 +79,25 @@ fun LiveUpdateButton(
         label = "live_update_press_scale"
     )
 
-    val infiniteTransition = rememberInfiniteTransition(label = "live_update_pulse")
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.45f,
-        targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "live_update_dot_alpha"
-    )
-
     val hasActionableUpdate = state.status == LiveUpdateStatus.UPDATE_AVAILABLE ||
         state.status == LiveUpdateStatus.DOWNLOADING ||
         state.status == LiveUpdateStatus.READY_TO_INSTALL ||
         state.status == LiveUpdateStatus.DOWNLOAD_COMPLETED
+
+    val pulseAlphaState = if (hasActionableUpdate && isResumed && !reducedMotion) {
+        val infiniteTransition = rememberInfiniteTransition(label = "live_update_pulse")
+        infiniteTransition.animateFloat(
+            initialValue = 0.45f,
+            targetValue = 1.0f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1200, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "live_update_dot_alpha"
+        )
+    } else {
+        remember { mutableFloatStateOf(0.85f) }
+    }
 
     val accentColor by animateColorAsState(
         targetValue = when (state.status) {
@@ -130,20 +143,24 @@ fun LiveUpdateButton(
         else -> Icons.Default.SystemUpdate
     }
 
-    val shape = RoundedCornerShape(18.dp)
-    val borderBrush = Brush.horizontalGradient(
-        colors = listOf(
-            StoreProSecondaryCyan.copy(alpha = if (hasActionableUpdate) 0.9f else 0.55f),
-            StoreProPrimaryGreen.copy(alpha = if (hasActionableUpdate) 0.95f else 0.55f)
+    val shape = remember { RoundedCornerShape(18.dp) }
+    val borderBrush = remember(hasActionableUpdate) {
+        Brush.horizontalGradient(
+            colors = listOf(
+                StoreProSecondaryCyan.copy(alpha = if (hasActionableUpdate) 0.9f else 0.55f),
+                StoreProPrimaryGreen.copy(alpha = if (hasActionableUpdate) 0.95f else 0.55f)
+            )
         )
-    )
-    val surfaceBrush = Brush.horizontalGradient(
-        colors = listOf(
-            Color(0xFF0F172A),
-            Color(0xFF132238),
-            Color(0xFF0E1D2F)
+    }
+    val surfaceBrush = remember {
+        Brush.horizontalGradient(
+            colors = listOf(
+                Color(0xFF0F172A),
+                Color(0xFF132238),
+                Color(0xFF0E1D2F)
+            )
         )
-    )
+    }
 
     Box(
         modifier = modifier
@@ -202,8 +219,11 @@ fun LiveUpdateButton(
                                 .align(Alignment.TopEnd)
                                 .padding(4.dp)
                                 .size(8.dp)
+                                .graphicsLayer {
+                                    alpha = pulseAlphaState.value
+                                }
                                 .clip(CircleShape)
-                                .background(StoreProPrimaryGreen.copy(alpha = pulseAlpha))
+                                .background(StoreProPrimaryGreen)
                                 .testTag("live_update_availability_dot")
                         )
                     }

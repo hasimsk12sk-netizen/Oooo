@@ -36,15 +36,22 @@ service firebase.storage {
       allow read, write: if false;
     }
 
-    // STORE PRO self-update APKs:
-    // - Only verified administrator can upload, overwrite, or delete APK files
-    // - Published update APKs can be downloaded; unpublished APKs are admin-only
+    // STORE PRO Admin release APKs (legacy path - strictly admin-only)
     match /releases/{releaseFolder}/{fileName} {
-      allow read: if fileName.matches('.*\\.apk$') && (isAdmin() || isPublishedFile());
-      allow create, update: if isAdmin() &&
+      allow read: if fileName.matches('.*\\.apk$') && isAdmin();
+      allow create: if isAdmin() &&
         fileName.matches('.*\\.apk$') &&
         isValidApkUpload();
-      allow delete: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // STORE PRO permanent versioned release APK archive (never overwritten or deleted)
+    match /STORE_PRO/RELEASES/{versionFolder}/{fileName} {
+      allow read: if fileName.matches('.*\\.apk$') && isAdmin();
+      allow create: if isAdmin() &&
+        fileName.matches('.*\\.apk$') &&
+        isValidApkUpload();
+      allow update, delete: if false;
     }
 
     // Published marketplace application APKs:

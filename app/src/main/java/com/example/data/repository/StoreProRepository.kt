@@ -4,11 +4,13 @@ import android.content.Context
 import android.util.Log
 import com.example.R
 import com.example.data.model.ApplicationItem
+import com.example.data.model.CatalogUiState
 import com.example.data.model.DownloadItem
 import com.example.data.model.ReviewItem
 import com.example.data.model.SavedAppItem
 import com.example.data.model.UserProfile
 import com.example.ui.admin.AdminAuthManager
+import com.example.util.StoreProDeepLinkParser
 import com.google.firebase.Firebase
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.auth
@@ -91,6 +93,97 @@ class StoreProRepository(private val db: FirebaseFirestore) {
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.LIST, path)
             emit(emptyList())
+        }
+    }
+
+    // 1b. Published Catalog Stream with explicit Loading / Success / Error UI states
+    fun observePublishedCatalogState(): Flow<CatalogUiState> = flow {
+        val path = "applications"
+        emit(CatalogUiState.Loading)
+        try {
+            emitAll(
+                db.collection(path)
+                    .snapshots()
+                    .map<com.google.firebase.firestore.QuerySnapshot, CatalogUiState> { snapshot ->
+                        val published = snapshot.documents.mapNotNull { doc ->
+                            try {
+                                doc.toApplicationItemSafe()
+                            } catch (e: Exception) {
+                                Log.w("StoreProRepository", "Skipping malformed application doc ${doc.id}: ${e.message}")
+                                null
+                            }
+                        }.filter { it.status.equals("published", ignoreCase = true) || it.status.isBlank() }
+                        CatalogUiState.Success(published)
+                    }
+                    .flowOn(Dispatchers.Default)
+                    .catch { error ->
+                        val firestoreError = generateSequence(error) { it.cause }
+                            .filterIsInstance<FirebaseFirestoreException>()
+                            .firstOrNull()
+                        if (firestoreError == null && error is CancellationException) throw error
+                        val exceptionToLog = firestoreError ?: (error as? Exception)
+                        if (exceptionToLog != null) {
+                            handleFirestoreError(exceptionToLog, OperationType.LIST, path)
+                        }
+                        emit(
+                            CatalogUiState.Error(
+                                message = firestoreError?.localizedMessage
+                                    ?: error.localizedMessage
+                                    ?: "Unable to load applications from STORE PRO.",
+                                cachedApplications = emptyList()
+                            )
+                        )
+                    }
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.LIST, path)
+            emit(
+                CatalogUiState.Error(
+                    message = e.localizedMessage ?: "Unable to connect to STORE PRO catalog.",
+                    cachedApplications = emptyList()
+                )
+            )
+        }
+    }
+
+    suspend fun fetchPublishedApplicationsOnce(): Result<List<ApplicationItem>> {
+        val path = "applications"
+        return try {
+            val snap = db.collection(path).get().await()
+            val list = snap.documents.mapNotNull { doc ->
+                runCatching { doc.toApplicationItemSafe() }.getOrNull()
+            }.filter { it.status.equals("published", ignoreCase = true) || it.status.isBlank() }
+            Result.success(list)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.LIST, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun fetchPublishedApplicationById(appIdOrSlug: String): Result<ApplicationItem?> {
+        val clean = appIdOrSlug.trim()
+        if (clean.isEmpty()) return Result.success(null)
+        val directRef = db.collection("applications").document(clean)
+        return try {
+            val directSnap = directRef.get().await()
+            if (directSnap.exists()) {
+                val parsed = directSnap.toApplicationItemSafe()
+                if (parsed.status.equals("published", ignoreCase = true) || parsed.status.isBlank()) {
+                    return Result.success(parsed)
+                }
+            }
+            // Fallback: resolve by app name slug or packageId across published applications
+            val allPublished = fetchPublishedApplicationsOnce().getOrElse { return Result.failure(it) }
+            Result.success(StoreProDeepLinkParser.findMatchingApplication(allPublished, clean))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.READ, directRef.path)
+            Result.failure(e)
         }
     }
 

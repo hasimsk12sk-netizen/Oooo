@@ -113,7 +113,19 @@ class DeviceAndUpdateRepository(
         sdkVersion: Int = 0,
         deviceType: String = "",
         versionCode: Long,
-        versionName: String
+        versionName: String,
+        modelCode: String = "",
+        productName: String = "",
+        cpuArch: String = "",
+        ramInfo: String = "",
+        totalRam: String = "",
+        availableRam: String = "",
+        screenResolution: String = "",
+        screenDensity: String = "",
+        connectionType: String = "",
+        installedAt: Long = 0L,
+        deviceFingerprint: String = "",
+        legacyInstallationId: String? = null
     ): Result<RegisteredDevice> {
         if (installationId.isBlank()) {
             return Result.failure(IllegalArgumentException("Installation ID cannot be blank"))
@@ -133,25 +145,26 @@ class DeviceAndUpdateRepository(
         val docRef = db.collection("registered_devices").document(installationId)
         val safeName = deviceName.trim().ifBlank { RegisteredDevice.NOT_AVAILABLE }.take(120)
         val safeModel = deviceModel.trim().ifBlank { RegisteredDevice.NOT_AVAILABLE }.take(120)
-        val safeManufacturer = manufacturer.trim()
-            .takeIf { it.isNotBlank() && !it.equals(RegisteredDevice.NOT_AVAILABLE, true) }
-            ?.take(80)
-            ?: ""
-        val safeBrand = brand.trim()
-            .takeIf { it.isNotBlank() && !it.equals(RegisteredDevice.NOT_AVAILABLE, true) }
-            ?.take(80)
-            ?: ""
-        val safeAndroidVersion = androidVersion.trim()
-            .takeIf { it.isNotBlank() && !it.equals(RegisteredDevice.NOT_AVAILABLE, true) }
-            ?.take(40)
-            ?: ""
+        val safeManufacturer = sanitizeOptionalField(manufacturer, 80)
+        val safeBrand = sanitizeOptionalField(brand, 80)
+        val safeModelCode = sanitizeOptionalField(modelCode, 80)
+        val safeProductName = sanitizeOptionalField(productName, 80)
+        val safeCpuArch = sanitizeOptionalField(cpuArch, 60)
+        val resolvedTotalRam = sanitizeOptionalField(totalRam.ifBlank { ramInfo }, 60)
+        val safeRamInfo = sanitizeOptionalField(ramInfo.ifBlank { resolvedTotalRam }, 60)
+        val safeAvailableRam = sanitizeOptionalField(availableRam, 60)
+        val safeResolution = sanitizeOptionalField(screenResolution, 40)
+        val safeDensity = sanitizeOptionalField(screenDensity, 40)
+        val safeConnectionType = sanitizeOptionalField(connectionType, 40)
+        val safeAndroidVersion = sanitizeOptionalField(androidVersion, 40)
         val safeSdkVersion = sdkVersion.coerceIn(0, 200)
-        val safeDeviceType = deviceType.trim()
-            .takeIf { it.isNotBlank() && !it.equals(RegisteredDevice.NOT_AVAILABLE, true) }
-            ?.take(40)
-            ?: ""
+        val safeDeviceType = sanitizeOptionalField(deviceType, 40)
         val safeVersionCode = versionCode.coerceAtLeast(1L)
         val safeVersionName = versionName.trim().ifBlank { "1.0" }.take(40)
+        val safeInstalledAt = installedAt.coerceAtLeast(0L)
+        val safeFingerprint = sanitizeOptionalField(deviceFingerprint, 128)
+        val safeLegacyId = legacyInstallationId?.trim()
+            ?.takeIf { it.isNotBlank() && it != installationId && it.length <= 128 }
         val currentUser = auth.currentUser
         val accountStatus = if (currentUser != null) {
             RegisteredDevice.ACCOUNT_STATUS_LOGGED_IN
@@ -159,6 +172,7 @@ class DeviceAndUpdateRepository(
             RegisteredDevice.ACCOUNT_STATUS_GUEST
         }
         val associatedUid = currentUser?.uid?.take(128)
+        val associatedEmail = currentUser?.email?.take(200)
 
         return try {
             val existingSnap = try {
@@ -168,23 +182,55 @@ class DeviceAndUpdateRepository(
             }
 
             if (!existingSnap.exists()) {
+                // If upgrading from a legacy random UUID on the SAME installation, carry forward earliest timestamps & block state
+                val legacySnap = if (safeLegacyId != null) {
+                    runCatching {
+                        db.collection("registered_devices").document(safeLegacyId).get().await()
+                    }.getOrNull()?.takeIf { it.exists() }
+                } else {
+                    null
+                }
+                val legacyRecord = legacySnap?.let { runCatching { it.toRegisteredDeviceSafe() }.getOrNull() }
+                val legacyFirstTs = legacyRecord?.effectiveFirstUsedAt ?: 0L
+                val preservedRegisteredTs = legacySnap?.get("registeredAt")
+                val preservedFirstUsedTs = legacySnap?.get("firstUsedAt") ?: preservedRegisteredTs
+                val initialStatus = if (legacyRecord?.isBlocked == true) {
+                    RegisteredDevice.STATUS_BLOCKED
+                } else {
+                    RegisteredDevice.STATUS_ACTIVE
+                }
+
                 val createPayload = mutableMapOf<String, Any?>(
                     "installationId" to installationId,
                     "deviceName" to safeName,
                     "deviceModel" to safeModel,
                     "manufacturer" to safeManufacturer,
                     "brand" to safeBrand,
+                    "modelCode" to safeModelCode,
+                    "productName" to safeProductName,
+                    "cpuArch" to safeCpuArch,
+                    "ramInfo" to safeRamInfo,
+                    "totalRam" to resolvedTotalRam,
+                    "availableRam" to safeAvailableRam,
+                    "screenResolution" to safeResolution,
+                    "screenDensity" to safeDensity,
+                    "connectionType" to safeConnectionType,
                     "androidVersion" to safeAndroidVersion,
                     "sdkVersion" to safeSdkVersion,
                     "deviceType" to safeDeviceType,
                     "accountStatus" to accountStatus,
                     "associatedUserId" to associatedUid,
-                    "status" to RegisteredDevice.STATUS_ACTIVE,
+                    "associatedEmail" to associatedEmail,
+                    "status" to initialStatus,
                     "appVersionCode" to safeVersionCode,
                     "appVersionName" to safeVersionName,
-                    "registeredAt" to FieldValue.serverTimestamp(),
-                    "firstUsedAt" to FieldValue.serverTimestamp(),
-                    "lastActiveAt" to FieldValue.serverTimestamp()
+                    "installedAt" to safeInstalledAt,
+                    "deviceFingerprint" to safeFingerprint,
+                    "legacyInstallationId" to safeLegacyId,
+                    "registeredAt" to (preservedRegisteredTs ?: FieldValue.serverTimestamp()),
+                    "firstUsedAt" to (preservedFirstUsedTs ?: FieldValue.serverTimestamp()),
+                    "lastActiveAt" to FieldValue.serverTimestamp(),
+                    "lastSyncAt" to FieldValue.serverTimestamp()
                 )
                 docRef.set(createPayload).await()
                 val now = System.currentTimeMillis()
@@ -194,55 +240,100 @@ class DeviceAndUpdateRepository(
                     deviceModel = safeModel,
                     manufacturer = safeManufacturer,
                     brand = safeBrand,
+                    modelCode = safeModelCode,
+                    productName = safeProductName,
+                    cpuArch = safeCpuArch,
+                    ramInfo = safeRamInfo,
+                    totalRam = resolvedTotalRam,
+                    availableRam = safeAvailableRam,
+                    screenResolution = safeResolution,
+                    screenDensity = safeDensity,
+                    connectionType = safeConnectionType,
                     androidVersion = safeAndroidVersion,
                     sdkVersion = safeSdkVersion,
                     deviceType = safeDeviceType,
                     accountStatus = accountStatus,
                     associatedUserId = associatedUid,
-                    status = RegisteredDevice.STATUS_ACTIVE,
+                    associatedEmail = associatedEmail,
+                    status = initialStatus,
                     appVersionCode = safeVersionCode,
                     appVersionName = safeVersionName,
-                    registeredAt = now,
-                    firstUsedAt = now,
-                    lastActiveAt = now
+                    installedAt = safeInstalledAt,
+                    registeredAt = legacyRecord?.registeredAt?.takeIf { it > 0L } ?: now,
+                    firstUsedAt = if (legacyFirstTs > 0L) legacyFirstTs else now,
+                    lastActiveAt = now,
+                    lastSyncAt = now,
+                    deviceFingerprint = safeFingerprint,
+                    legacyInstallationId = safeLegacyId
                 )
                 Result.success(created)
             } else {
                 val current = existingSnap.toRegisteredDeviceSafe()
                 if (current.isBlocked) {
-                    // Blocked devices cannot overwrite status or write active heartbeats
                     Result.success(current)
                 } else {
-                    docRef.update(
-                        mapOf(
-                            "deviceName" to safeName,
-                            "deviceModel" to safeModel,
-                            "manufacturer" to safeManufacturer,
-                            "brand" to safeBrand,
-                            "androidVersion" to safeAndroidVersion,
-                            "sdkVersion" to safeSdkVersion,
-                            "deviceType" to safeDeviceType,
-                            "accountStatus" to accountStatus,
-                            "associatedUserId" to associatedUid,
-                            "appVersionCode" to safeVersionCode,
-                            "appVersionName" to safeVersionName,
-                            "lastActiveAt" to FieldValue.serverTimestamp()
-                        )
-                    ).await()
+                    val updates = mutableMapOf<String, Any?>(
+                        "deviceName" to safeName,
+                        "deviceModel" to safeModel,
+                        "manufacturer" to safeManufacturer,
+                        "brand" to safeBrand,
+                        "modelCode" to safeModelCode,
+                        "productName" to safeProductName,
+                        "cpuArch" to safeCpuArch,
+                        "ramInfo" to safeRamInfo,
+                        "totalRam" to resolvedTotalRam,
+                        "availableRam" to safeAvailableRam,
+                        "screenResolution" to safeResolution,
+                        "screenDensity" to safeDensity,
+                        "connectionType" to safeConnectionType,
+                        "androidVersion" to safeAndroidVersion,
+                        "sdkVersion" to safeSdkVersion,
+                        "deviceType" to safeDeviceType,
+                        "accountStatus" to accountStatus,
+                        "associatedUserId" to associatedUid,
+                        "associatedEmail" to associatedEmail,
+                        "appVersionCode" to safeVersionCode,
+                        "appVersionName" to safeVersionName,
+                        "installedAt" to safeInstalledAt,
+                        "lastActiveAt" to FieldValue.serverTimestamp(),
+                        "lastSyncAt" to FieldValue.serverTimestamp()
+                    )
+                    if (current.deviceFingerprint.isBlank() && safeFingerprint.isNotBlank()) {
+                        updates["deviceFingerprint"] = safeFingerprint
+                    }
+                    if (current.legacyInstallationId.isNullOrBlank() && safeLegacyId != null) {
+                        updates["legacyInstallationId"] = safeLegacyId
+                    }
+                    docRef.update(updates).await()
+                    val now = System.currentTimeMillis()
                     Result.success(
                         current.copy(
                             deviceName = safeName,
                             deviceModel = safeModel,
                             manufacturer = safeManufacturer,
                             brand = safeBrand,
+                            modelCode = safeModelCode,
+                            productName = safeProductName,
+                            cpuArch = safeCpuArch,
+                            ramInfo = safeRamInfo,
+                            totalRam = resolvedTotalRam,
+                            availableRam = safeAvailableRam,
+                            screenResolution = safeResolution,
+                            screenDensity = safeDensity,
+                            connectionType = safeConnectionType,
                             androidVersion = safeAndroidVersion,
                             sdkVersion = safeSdkVersion,
                             deviceType = safeDeviceType,
                             accountStatus = accountStatus,
                             associatedUserId = associatedUid,
+                            associatedEmail = associatedEmail,
                             appVersionCode = safeVersionCode,
                             appVersionName = safeVersionName,
-                            lastActiveAt = System.currentTimeMillis()
+                            installedAt = safeInstalledAt,
+                            lastActiveAt = now,
+                            lastSyncAt = now,
+                            deviceFingerprint = current.deviceFingerprint.ifBlank { safeFingerprint },
+                            legacyInstallationId = current.legacyInstallationId ?: safeLegacyId
                         )
                     )
                 }
@@ -315,7 +406,7 @@ class DeviceAndUpdateRepository(
                 db.collection(path)
                     .snapshots()
                     .map { snapshot ->
-                        snapshot.documents.mapNotNull { doc ->
+                        val parsed = snapshot.documents.mapNotNull { doc ->
                             try {
                                 doc.toRegisteredDeviceSafe()
                             } catch (e: Exception) {
@@ -323,9 +414,7 @@ class DeviceAndUpdateRepository(
                                 null
                             }
                         }
-                            .filter { it.isGenuineDeviceRecord() }
-                            .distinctBy { it.installationId }
-                            .sortedByDescending { maxOf(it.lastActiveAt, it.registeredAt) }
+                        deduplicateDevices(parsed)
                     }
                     .flowOn(Dispatchers.Default)
                     .catch { error ->
@@ -357,7 +446,7 @@ class DeviceAndUpdateRepository(
             } catch (_: Exception) {
                 db.collection(path).get().await()
             }
-            val list = snapshot.documents.mapNotNull { doc ->
+            val parsed = snapshot.documents.mapNotNull { doc ->
                 try {
                     doc.toRegisteredDeviceSafe()
                 } catch (e: Exception) {
@@ -365,14 +454,93 @@ class DeviceAndUpdateRepository(
                     null
                 }
             }
-                .filter { it.isGenuineDeviceRecord() }
-                .distinctBy { it.installationId }
-                .sortedByDescending { maxOf(it.lastActiveAt, it.registeredAt) }
-            Result.success(list)
+            Result.success(deduplicateDevices(parsed))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.LIST, path)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Safely reconciles and removes duplicate Firestore records belonging to the same physical
+     * installation (matched strictly via identical non-blank deviceFingerprint or explicit
+     * legacyInstallationId link). Never merges separate physical phones of the same model.
+     */
+    suspend fun reconcileDuplicateDevicesIfAdmin(): Result<Int> {
+        val path = "registered_devices"
+        return try {
+            requireAdminUserId()
+            val snapshot = db.collection(path).get().await()
+            val byId = linkedMapOf<String, Pair<DocumentSnapshot, RegisteredDevice>>()
+            for (doc in snapshot.documents) {
+                val parsed = runCatching { doc.toRegisteredDeviceSafe() }.getOrNull() ?: continue
+                if (parsed.isGenuineDeviceRecord()) {
+                    byId[parsed.installationId] = doc to parsed
+                }
+            }
+            val groups = buildPhysicalDuplicateGroups(byId.values.map { it.second })
+            var removedDuplicates = 0
+            for (group in groups) {
+                if (group.size <= 1) continue
+                val merged = mergePhysicalDeviceGroup(group)
+                val canonicalDoc = byId[merged.installationId]?.first ?: continue
+                runCatching {
+                    val earliestFirstTs = group
+                        .mapNotNull { idDoc ->
+                            byId[idDoc.installationId]?.first?.let { snap ->
+                                snap.get("firstUsedAt") ?: snap.get("registeredAt")
+                            }
+                        }
+                        .minByOrNull { tsValue ->
+                            StoreProRepository.parseEpochMillis(tsValue, Long.MAX_VALUE)
+                        }
+                    val updateMap = mutableMapOf<String, Any?>(
+                        "deviceName" to merged.deviceName,
+                        "deviceModel" to merged.deviceModel,
+                        "manufacturer" to merged.manufacturer,
+                        "brand" to merged.brand,
+                        "modelCode" to merged.modelCode,
+                        "productName" to merged.productName,
+                        "cpuArch" to merged.cpuArch,
+                        "ramInfo" to merged.ramInfo,
+                        "totalRam" to merged.totalRam,
+                        "availableRam" to merged.availableRam,
+                        "screenResolution" to merged.screenResolution,
+                        "screenDensity" to merged.screenDensity,
+                        "connectionType" to merged.connectionType,
+                        "androidVersion" to merged.androidVersion,
+                        "sdkVersion" to merged.sdkVersion,
+                        "deviceType" to merged.deviceType,
+                        "accountStatus" to merged.accountStatus,
+                        "associatedUserId" to merged.associatedUserId,
+                        "associatedEmail" to merged.associatedEmail,
+                        "status" to merged.status,
+                        "isAdminDevice" to merged.isAdminDevice,
+                        "appVersionCode" to merged.appVersionCode,
+                        "appVersionName" to merged.appVersionName,
+                        "installedAt" to merged.installedAt,
+                        "deviceFingerprint" to merged.deviceFingerprint
+                    )
+                    if (earliestFirstTs != null) {
+                        updateMap["firstUsedAt"] = earliestFirstTs
+                    }
+                    canonicalDoc.reference.update(updateMap).await()
+
+                    for (dup in group) {
+                        if (dup.installationId != merged.installationId) {
+                            byId[dup.installationId]?.first?.reference?.delete()?.await()
+                            removedDuplicates++
+                        }
+                    }
+                }
+            }
+            Result.success(removedDuplicates)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Non-fatal error reconciling duplicate devices: ${e.message}")
             Result.failure(e)
         }
     }
@@ -397,6 +565,33 @@ class DeviceAndUpdateRepository(
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "Non-fatal error purging fake device entries: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    suspend fun cleanupStaleDevices(
+        staleThresholdMs: Long = RegisteredDevice.DEFAULT_STALE_OFFLINE_WINDOW_MS
+    ): Result<Int> {
+        val path = "registered_devices"
+        return try {
+            requireAdminUserId()
+            val snapshot = db.collection(path).get().await()
+            val now = System.currentTimeMillis()
+            var removedCount = 0
+            for (doc in snapshot.documents) {
+                val parsed = runCatching { doc.toRegisteredDeviceSafe() }.getOrNull() ?: continue
+                if (!parsed.isGenuineDeviceRecord() || parsed.isStaleOffline(now, staleThresholdMs)) {
+                    runCatching {
+                        doc.reference.delete().await()
+                        removedCount++
+                    }
+                }
+            }
+            Result.success(removedCount)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Error cleaning up stale devices: ${e.message}")
             Result.failure(e)
         }
     }
@@ -510,6 +705,115 @@ class DeviceAndUpdateRepository(
     companion object {
         private const val TAG = "DeviceAndUpdateRepo"
 
+        private fun sanitizeOptionalField(raw: String, maxLen: Int): String {
+            return raw.trim()
+                .takeIf { it.isNotBlank() && !it.equals(RegisteredDevice.NOT_AVAILABLE, true) }
+                ?.take(maxLen)
+                ?: ""
+        }
+
+        /**
+         * Groups duplicate RegisteredDevice records ONLY when they provably belong to the same
+         * physical installation (identical non-blank deviceFingerprint OR explicit legacyInstallationId
+         * migration link). Separate physical phones of the exact same model are NEVER merged.
+         */
+        internal fun deduplicateDevices(rawList: List<RegisteredDevice>): List<RegisteredDevice> {
+            val genuineById = rawList
+                .filter { it.isGenuineDeviceRecord() }
+                .associateBy { it.installationId }
+                .values
+                .toList()
+            if (genuineById.isEmpty()) return emptyList()
+            return buildPhysicalDuplicateGroups(genuineById)
+                .map { mergePhysicalDeviceGroup(it) }
+                .sortedByDescending { maxOf(it.lastActiveAt, it.registeredAt) }
+        }
+
+        internal fun buildPhysicalDuplicateGroups(devices: List<RegisteredDevice>): List<List<RegisteredDevice>> {
+            if (devices.isEmpty()) return emptyList()
+            val indexById = devices.mapIndexed { idx, d -> d.installationId to idx }.toMap()
+            val parent = IntArray(devices.size) { it }
+
+            fun find(x: Int): Int {
+                var r = x
+                while (parent[r] != r) r = parent[r]
+                var cur = x
+                while (cur != r) {
+                    val next = parent[cur]
+                    parent[cur] = r
+                    cur = next
+                }
+                return r
+            }
+
+            fun union(a: Int, b: Int) {
+                val ra = find(a)
+                val rb = find(b)
+                if (ra != rb) parent[rb] = ra
+            }
+
+            // 1. Link records sharing identical non-blank cryptographic physical deviceFingerprint
+            val firstIdxByFingerprint = hashMapOf<String, Int>()
+            devices.forEachIndexed { idx, dev ->
+                val fp = dev.deviceFingerprint.trim()
+                if (fp.isNotBlank()) {
+                    val prev = firstIdxByFingerprint.putIfAbsent(fp, idx)
+                    if (prev != null) {
+                        union(prev, idx)
+                    }
+                }
+            }
+
+            // 2. Link explicit legacyInstallationId migration edges (same app prefs upgrade)
+            devices.forEachIndexed { idx, dev ->
+                val legacyId = dev.legacyInstallationId?.trim().orEmpty()
+                if (legacyId.isNotBlank() && legacyId != dev.installationId) {
+                    val legacyIdx = indexById[legacyId]
+                    if (legacyIdx != null) {
+                        union(idx, legacyIdx)
+                    }
+                }
+            }
+
+            return devices.indices
+                .groupBy { find(it) }
+                .values
+                .map { indices -> indices.map { devices[it] } }
+        }
+
+        internal fun mergePhysicalDeviceGroup(group: List<RegisteredDevice>): RegisteredDevice {
+            if (group.size == 1) return group.first()
+            val canonical = group
+                .sortedWith(
+                    compareByDescending<RegisteredDevice> { it.deviceFingerprint.isNotBlank() }
+                        .thenByDescending { it.legacyInstallationId != null }
+                        .thenByDescending { maxOf(it.lastActiveAt, it.lastSyncAt, it.registeredAt) }
+                )
+                .first()
+            val latestByActivity = group.maxByOrNull { maxOf(it.lastActiveAt, it.lastSyncAt, it.registeredAt) } ?: canonical
+            val earliestRegisteredAt = group.mapNotNull { it.registeredAt.takeIf { ts -> ts > 0L } }.minOrNull() ?: 0L
+            val earliestFirstUsedAt = group.mapNotNull { it.effectiveFirstUsedAt.takeIf { ts -> ts > 0L } }.minOrNull() ?: earliestRegisteredAt
+            val latestInstalledAt = group.mapNotNull { it.installedAt.takeIf { ts -> ts > 0L } }.maxOrNull() ?: latestByActivity.installedAt
+            val latestActiveAt = group.maxOfOrNull { it.lastActiveAt } ?: 0L
+            val latestSyncAt = group.maxOfOrNull { it.lastSyncAt } ?: 0L
+            val anyBlocked = group.any { it.isBlocked }
+            val anyAdmin = group.any { it.isAdminDevice }
+            val latestFingerprint = group.firstNotNullOfOrNull { it.deviceFingerprint.takeIf { fp -> fp.isNotBlank() } }.orEmpty()
+
+            return latestByActivity.copy(
+                installationId = canonical.installationId,
+                deviceFingerprint = latestFingerprint,
+                legacyInstallationId = canonical.legacyInstallationId,
+                status = if (anyBlocked) RegisteredDevice.STATUS_BLOCKED else RegisteredDevice.STATUS_ACTIVE,
+                isAdminDevice = anyAdmin,
+                registeredAt = earliestRegisteredAt,
+                firstUsedAt = earliestFirstUsedAt,
+                installedAt = latestInstalledAt,
+                lastActiveAt = latestActiveAt,
+                lastSyncAt = latestSyncAt
+            )
+        }
+
         internal fun DocumentSnapshot.toRegisteredDeviceSafe(): RegisteredDevice {
             val data = getData(DocumentSnapshot.ServerTimestampBehavior.ESTIMATE).orEmpty()
             val rawStatus = (data["status"] as? String)?.trim()?.uppercase()
@@ -525,6 +829,7 @@ class DeviceAndUpdateRepository(
             val sdkVersion = (data["sdkVersion"] as? Number)?.toInt() ?: 0
             val deviceType = (data["deviceType"] as? String)?.trim()?.takeIf { it.isNotBlank() } ?: ""
             val associatedUid = (data["associatedUserId"] as? String)?.trim()?.takeIf { it.isNotBlank() }
+            val associatedEmail = (data["associatedEmail"] as? String)?.trim()?.takeIf { it.isNotBlank() }
             val rawAccountStatus = (data["accountStatus"] as? String)?.trim()?.uppercase()
             val normalizedAccountStatus = when {
                 rawAccountStatus == RegisteredDevice.ACCOUNT_STATUS_LOGGED_IN -> RegisteredDevice.ACCOUNT_STATUS_LOGGED_IN
@@ -532,26 +837,46 @@ class DeviceAndUpdateRepository(
                 !associatedUid.isNullOrBlank() -> RegisteredDevice.ACCOUNT_STATUS_LOGGED_IN
                 else -> RegisteredDevice.ACCOUNT_STATUS_GUEST
             }
+            val legacyRam = (data["ramInfo"] as? String)?.trim()?.takeIf { it.isNotBlank() } ?: ""
+            val totalRam = (data["totalRam"] as? String)?.trim()?.takeIf { it.isNotBlank() } ?: legacyRam
+            val availableRam = (data["availableRam"] as? String)?.trim()?.takeIf { it.isNotBlank() } ?: ""
+            val installedAtMs = StoreProRepository.parseEpochMillis(data["installedAt"], 0L)
             val registeredAtMs = StoreProRepository.parseEpochMillis(data["registeredAt"], 0L)
             val firstUsedAtMs = StoreProRepository.parseEpochMillis(data["firstUsedAt"], 0L)
+            val lastActiveAtMs = StoreProRepository.parseEpochMillis(data["lastActiveAt"], 0L)
+            val lastSyncAtMs = StoreProRepository.parseEpochMillis(data["lastSyncAt"], lastActiveAtMs)
             return RegisteredDevice(
                 installationId = (data["installationId"] as? String)?.takeIf { it.isNotBlank() } ?: id,
                 deviceName = (data["deviceName"] as? String)?.trim()?.ifBlank { "" } ?: "",
                 deviceModel = model,
                 manufacturer = manufacturer,
                 brand = brand,
+                modelCode = (data["modelCode"] as? String)?.trim()?.takeIf { it.isNotBlank() } ?: model,
+                productName = (data["productName"] as? String)?.trim()?.takeIf { it.isNotBlank() } ?: "",
+                cpuArch = (data["cpuArch"] as? String)?.trim()?.takeIf { it.isNotBlank() } ?: "",
+                ramInfo = legacyRam.ifBlank { totalRam },
+                totalRam = totalRam,
+                availableRam = availableRam,
+                screenResolution = (data["screenResolution"] as? String)?.trim()?.takeIf { it.isNotBlank() } ?: "",
+                screenDensity = (data["screenDensity"] as? String)?.trim()?.takeIf { it.isNotBlank() } ?: "",
+                connectionType = (data["connectionType"] as? String)?.trim()?.takeIf { it.isNotBlank() } ?: "",
                 androidVersion = androidVersion,
                 sdkVersion = sdkVersion,
                 deviceType = deviceType,
                 accountStatus = normalizedAccountStatus,
                 associatedUserId = associatedUid,
+                associatedEmail = associatedEmail,
                 status = normalizedStatus,
                 isAdminDevice = data["isAdminDevice"] as? Boolean ?: false,
                 appVersionCode = (data["appVersionCode"] as? Number)?.toLong() ?: 1L,
                 appVersionName = (data["appVersionName"] as? String) ?: "1.0",
+                installedAt = installedAtMs,
                 registeredAt = registeredAtMs,
                 firstUsedAt = if (firstUsedAtMs > 0L) firstUsedAtMs else registeredAtMs,
-                lastActiveAt = StoreProRepository.parseEpochMillis(data["lastActiveAt"], 0L)
+                lastActiveAt = lastActiveAtMs,
+                lastSyncAt = lastSyncAtMs,
+                deviceFingerprint = (data["deviceFingerprint"] as? String)?.trim().orEmpty(),
+                legacyInstallationId = (data["legacyInstallationId"] as? String)?.trim()?.takeIf { it.isNotBlank() }
             )
         }
 

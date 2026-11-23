@@ -1,5 +1,6 @@
 package com.example.ui.upload
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -54,9 +56,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.download.FileSharingLinkResolver
 import com.example.data.model.ApplicationItem
+import com.example.data.model.LiveUpdateRelease
 import com.example.data.repository.DeviceAndUpdateRepository
+import com.example.data.repository.LiveUpdateRepository
 import com.example.data.repository.StoreProRepository
 import com.example.ui.admin.AdminAuthManager
+import com.example.ui.theme.StoreProCardBackground
 import com.example.ui.theme.StoreProCardBorder
 import com.example.ui.theme.StoreProPrimaryGreen
 import com.example.ui.theme.StoreProSecondaryCyan
@@ -71,14 +76,13 @@ import okhttp3.Request
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-private val metadataProbeClient: OkHttpClient by lazy {
-    OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build()
+enum class UploadStudioTab {
+    PUBLISH_APP,
+    PUBLISH_UPDATE
 }
+
+private val metadataProbeClient: OkHttpClient
+    get() = com.example.util.StoreProNetworkClient.fastProbeClient
 
 @Composable
 fun UploadAppScreen(
@@ -89,6 +93,11 @@ fun UploadAppScreen(
     onAdminLogout: () -> Unit,
     onUnauthorized: () -> Unit,
     deviceUpdateRepository: DeviceAndUpdateRepository? = null,
+    liveUpdateRepository: LiveUpdateRepository? = null,
+    initialTab: UploadStudioTab = UploadStudioTab.PUBLISH_APP,
+    adminAllLiveReleases: List<LiveUpdateRelease> = emptyList(),
+    onOpenUpdateHistory: () -> Unit = {},
+    onStatusMessage: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -96,6 +105,11 @@ fun UploadAppScreen(
     val resolvedUpdateRepo = remember(deviceUpdateRepository) {
         deviceUpdateRepository ?: DeviceAndUpdateRepository(context)
     }
+    val resolvedLiveUpdateRepo = remember(liveUpdateRepository) {
+        liveUpdateRepository ?: LiveUpdateRepository(context)
+    }
+
+    var selectedTab by remember(initialTab) { mutableStateOf(initialTab) }
 
     // Guard route on entry so unauthorized users can never access upload UI
     LaunchedEffect(Unit) {
@@ -121,11 +135,16 @@ fun UploadAppScreen(
     var validationError by remember { mutableStateOf<String?>(null) }
     var successMessage by remember { mutableStateOf<String?>(null) }
 
+    val scrollState = rememberScrollState()
+    LaunchedEffect(selectedTab) {
+        scrollState.scrollTo(0)
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFF0A0F1D))
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState)
             .padding(horizontal = 20.dp, vertical = 14.dp)
             .padding(bottom = 60.dp)
     ) {
@@ -222,6 +241,78 @@ fun UploadAppScreen(
             }
         }
 
+        // Screenshot 2 Reference Two-Tab Strip Directly Below Admin Authentication Card
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            val isPublishApp = selectedTab == UploadStudioTab.PUBLISH_APP
+            val isPublishUpdate = selectedTab == UploadStudioTab.PUBLISH_UPDATE
+
+            Button(
+                onClick = { selectedTab = UploadStudioTab.PUBLISH_APP },
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isPublishApp) StoreProPrimaryGreen else StoreProCardBackground,
+                    contentColor = if (isPublishApp) Color(0xFF003816) else Color(0xFFCBD5E1)
+                ),
+                border = if (isPublishApp) null else BorderStroke(1.dp, StoreProCardBorder),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
+                    .testTag("studio_tab_publish_app")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CloudUpload,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Publish App",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
+
+            Button(
+                onClick = { selectedTab = UploadStudioTab.PUBLISH_UPDATE },
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isPublishUpdate) Color(0xFF9B5DE5) else StoreProCardBackground,
+                    contentColor = if (isPublishUpdate) Color.White else Color(0xFFCBD5E1)
+                ),
+                border = if (isPublishUpdate) null else BorderStroke(1.dp, StoreProCardBorder),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
+                    .testTag("studio_tab_publish_update")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SystemUpdate,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Publish Update",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
+        }
+
+        if (selectedTab == UploadStudioTab.PUBLISH_UPDATE) {
+            AdminPublishUpdateTab(
+                allReleases = adminAllLiveReleases,
+                liveUpdateRepository = resolvedLiveUpdateRepo,
+                onOpenHistory = onOpenUpdateHistory,
+                onStatusMessage = onStatusMessage,
+                onUnauthorized = onUnauthorized
+            )
+        } else {
         Text(
             text = "Publish Application",
             fontSize = 24.sp,
@@ -640,6 +731,7 @@ fun UploadAppScreen(
                     )
                 }
             }
+        }
         }
     }
 }

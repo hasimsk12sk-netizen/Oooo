@@ -66,12 +66,8 @@ class DownloadController(
     private val context: Context,
     private val repository: StoreProRepository
 ) {
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build()
+    private val client: OkHttpClient
+        get() = com.example.util.StoreProNetworkClient.downloadClient
 
     private val _progressState = MutableStateFlow(DownloadProgressState())
     val progressState = _progressState.asStateFlow()

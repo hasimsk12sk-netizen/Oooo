@@ -28,12 +28,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,15 +46,14 @@ import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import coil.request.CachePolicy
 import coil.request.ImageRequest
+import coil.size.Precision
 import com.example.ui.theme.StoreProCardBorder
 import com.example.ui.theme.StoreProPrimaryGreen
 import com.example.ui.theme.StoreProSecondaryCyan
+import com.example.util.StoreProNetworkClient
 import kotlinx.coroutines.Dispatchers
-import okhttp3.ConnectionPool
-import okhttp3.ConnectionSpec
-import okhttp3.OkHttpClient
 import java.io.File
-import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
 
 /**
  * Shared Coil ImageLoader configured with explicit MemoryCache, DiskCache, background IO dispatchers,
@@ -69,37 +70,12 @@ object UniversalImageLoader {
     }
 
     private fun buildImageLoader(appContext: Context): ImageLoader {
-        val okHttpClient = OkHttpClient.Builder()
-            .followRedirects(true)
-            .followSslRedirects(true)
-            .retryOnConnectionFailure(true)
-            .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .connectionSpecs(
-                listOf(
-                    ConnectionSpec.MODERN_TLS,
-                    ConnectionSpec.COMPATIBLE_TLS,
-                    ConnectionSpec.CLEARTEXT
-                )
-            )
-            .addInterceptor { chain ->
-                val req = chain.request().newBuilder()
-                    .header(
-                        "User-Agent",
-                        "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
-                    )
-                    .header("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
-                    .build()
-                chain.proceed(req)
-            }
-            .build()
-
         return ImageLoader.Builder(appContext)
-            .okHttpClient(okHttpClient)
+            .okHttpClient(StoreProNetworkClient.imageClient)
             .memoryCache {
                 MemoryCache.Builder(appContext)
                     .maxSizePercent(0.20)
+                    .weakReferencesEnabled(true)
                     .build()
             }
             .diskCache {
@@ -109,8 +85,9 @@ object UniversalImageLoader {
                     .build()
             }
             .dispatcher(Dispatchers.IO)
+            .bitmapFactoryMaxParallelism(4)
             .allowHardware(true)
-            .crossfade(true)
+            .crossfade(150)
             .respectCacheHeaders(false)
             .diskCachePolicy(CachePolicy.ENABLED)
             .memoryCachePolicy(CachePolicy.ENABLED)
@@ -246,9 +223,26 @@ fun AppIconPreviewBox(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val normalizedUrl = UniversalImageUtils.normalizeImageUrl(iconUrl)
-    val isValid = UniversalImageUtils.isValidImageUrl(normalizedUrl)
-    val formatLabel = if (isValid) UniversalImageUtils.detectFormatLabel(normalizedUrl) else null
+    val density = LocalDensity.current
+    val iconSizePx = remember(density) { with(density) { 68.dp.toPx().roundToInt().coerceAtLeast(128) } }
+    val imageLoader = remember(context) { UniversalImageLoader.get(context) }
+    val normalizedUrl = remember(iconUrl) { UniversalImageUtils.normalizeImageUrl(iconUrl) }
+    val isValid = remember(normalizedUrl) { UniversalImageUtils.isValidImageUrl(normalizedUrl) }
+    val formatLabel = remember(normalizedUrl, isValid) {
+        if (isValid) UniversalImageUtils.detectFormatLabel(normalizedUrl) else null
+    }
+    val imageRequest = remember(context, normalizedUrl, isValid, iconSizePx) {
+        if (isValid) {
+            ImageRequest.Builder(context)
+                .data(normalizedUrl)
+                .size(iconSizePx, iconSizePx)
+                .precision(Precision.INEXACT)
+                .crossfade(150)
+                .build()
+        } else {
+            null
+        }
+    }
 
     Card(
         shape = RoundedCornerShape(16.dp),
@@ -270,13 +264,10 @@ fun AppIconPreviewBox(
                     .border(1.dp, StoreProCardBorder, RoundedCornerShape(16.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                if (isValid) {
+                if (imageRequest != null) {
                     SubcomposeAsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(normalizedUrl)
-                            .crossfade(true)
-                            .build(),
-                        imageLoader = UniversalImageLoader.get(context),
+                        model = imageRequest,
+                        imageLoader = imageLoader,
                         contentDescription = "App Icon Preview",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
@@ -352,7 +343,11 @@ fun ScreenshotsPreviewGallery(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val urls = UniversalImageUtils.parseMultipleImageUrls(rawUrls)
+    val density = LocalDensity.current
+    val imageLoader = remember(context) { UniversalImageLoader.get(context) }
+    val thumbW = remember(density) { with(density) { 110.dp.toPx().roundToInt().coerceAtLeast(180) } }
+    val thumbH = remember(density) { with(density) { 180.dp.toPx().roundToInt().coerceAtLeast(300) } }
+    val urls = remember(rawUrls) { UniversalImageUtils.parseMultipleImageUrls(rawUrls) }
 
     if (urls.isEmpty()) return
 
@@ -395,7 +390,15 @@ fun ScreenshotsPreviewGallery(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             urls.forEachIndexed { index, rawUrl ->
-                val normalized = UniversalImageUtils.normalizeImageUrl(rawUrl)
+                val normalized = remember(rawUrl) { UniversalImageUtils.normalizeImageUrl(rawUrl) }
+                val request = remember(context, normalized, thumbW, thumbH) {
+                    ImageRequest.Builder(context)
+                        .data(normalized)
+                        .size(thumbW, thumbH)
+                        .precision(Precision.INEXACT)
+                        .crossfade(150)
+                        .build()
+                }
                 Box(
                     modifier = Modifier
                         .width(110.dp)
@@ -406,11 +409,8 @@ fun ScreenshotsPreviewGallery(
                     contentAlignment = Alignment.Center
                 ) {
                     SubcomposeAsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(normalized)
-                            .crossfade(true)
-                            .build(),
-                        imageLoader = UniversalImageLoader.get(context),
+                        model = request,
+                        imageLoader = imageLoader,
                         contentDescription = "Screenshot ${index + 1}",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),

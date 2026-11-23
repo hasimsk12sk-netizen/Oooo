@@ -10,6 +10,7 @@ import androidx.core.content.pm.PackageInfoCompat
 import com.example.data.model.InspectedApkMetadata
 import com.example.data.model.InstalledAppDetails
 import com.example.data.model.LiveUpdateRelease
+import com.example.data.model.UpdateHistoryRecord
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -277,6 +278,56 @@ object LiveUpdateApkVerifier {
             apkSigning = inspected.signingSha256Set,
             installedSigning = installed.signingSha256Set,
             expectedReleaseSigning = expectedRelease.signingSha256,
+            errors = errors
+        )
+
+        return ApkVerificationResult(
+            isValid = errors.isEmpty(),
+            errors = errors,
+            matchedSigningSha256 = matchedSigning
+        )
+    }
+
+    fun verifyHistoricalInstallCompatibility(
+        context: Context,
+        downloadedFile: File,
+        historyRecord: UpdateHistoryRecord,
+        installed: InstalledAppDetails
+    ): ApkVerificationResult {
+        val inspected = inspectApkFile(context, downloadedFile, downloadedFile.name)
+        return verifyHistoricalMetadataCompatibility(inspected, historyRecord, installed)
+    }
+
+    fun verifyHistoricalMetadataCompatibility(
+        inspected: InspectedApkMetadata,
+        historyRecord: UpdateHistoryRecord,
+        installed: InstalledAppDetails
+    ): ApkVerificationResult {
+        val errors = mutableListOf<String>()
+
+        if (!inspected.isValidArchive) {
+            errors += (inspected.errorMessage ?: "Downloaded APK is corrupted or incomplete.")
+        }
+        if (historyRecord.apkFileSize > 0L && inspected.fileSizeBytes != historyRecord.apkFileSize) {
+            errors += "APK file size mismatch: expected ${historyRecord.apkFileSize} bytes, got ${inspected.fileSizeBytes} bytes."
+        }
+        val expectedPkg = historyRecord.packageName.ifBlank { installed.packageName }
+        if (inspected.packageName != expectedPkg) {
+            errors += "Package mismatch: historical APK belongs to '${inspected.packageName}', expected '$expectedPkg'."
+        }
+        if (historyRecord.versionCode > 0L && inspected.versionCode != historyRecord.versionCode) {
+            errors += "Version mismatch: expected Build ${historyRecord.versionCode}, APK reports Build ${inspected.versionCode}."
+        }
+        if (inspected.versionCode in 1L until installed.versionCode) {
+            errors += "Android OS prevents in-place downgrade from Build ${installed.versionCode} (v${installed.versionName}) " +
+                "to older Build ${inspected.versionCode} (v${historyRecord.versionName}) without uninstalling first, protecting your existing app data. " +
+                "Your downloaded APK remains safely stored for manual archival or clean install."
+        }
+
+        val matchedSigning = resolveMatchedSigningSha256(
+            apkSigning = inspected.signingSha256Set,
+            installedSigning = installed.signingSha256Set,
+            expectedReleaseSigning = historyRecord.signingCertificateFingerprint,
             errors = errors
         )
 

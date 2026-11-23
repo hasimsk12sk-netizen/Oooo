@@ -145,7 +145,8 @@ service cloud.firestore {
           'releaseId', 'versionName', 'versionCode', 'packageName',
           'apkDownloadUrl', 'apkSize', 'releaseNotes', 'releaseDate',
           'published', 'releaseStatus', 'storagePath', 'apkSha256',
-          'signingSha256', 'publishedBy', 'updatedAt'
+          'signingSha256', 'publishedBy', 'updatedAt',
+          'mandatoryUpdate', 'changelog', 'adminEmail', 'apkFileName', 'buildNumber', 'historyId'
         ]) &&
         isValidId(data.releaseId) &&
         data.versionName is string && data.versionName.size() >= 1 && data.versionName.size() <= 40 &&
@@ -166,8 +167,55 @@ service cloud.firestore {
         (!('storagePath' in data) || (data.storagePath is string && data.storagePath.size() <= 500)) &&
         (!('apkSha256' in data) || (data.apkSha256 is string && data.apkSha256.size() <= 128)) &&
         (!('signingSha256' in data) || (data.signingSha256 is string && data.signingSha256.size() <= 128)) &&
+        (!('mandatoryUpdate' in data) || data.mandatoryUpdate is bool) &&
+        (!('changelog' in data) || (data.changelog is string && data.changelog.size() <= 5000)) &&
+        (!('adminEmail' in data) || (data.adminEmail is string && data.adminEmail.size() <= 200)) &&
+        (!('apkFileName' in data) || (data.apkFileName is string && data.apkFileName.size() <= 255)) &&
+        (!('buildNumber' in data) || (data.buildNumber is int && data.buildNumber >= 1)) &&
+        (!('historyId' in data) || (data.historyId is string && data.historyId.size() <= 128)) &&
         data.publishedBy is string && data.publishedBy.size() >= 1 && data.publishedBy.size() <= 128 &&
         data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidUpdateHistory(data) {
+      return data.keys().hasAll([
+          'historyId', 'versionName', 'versionCode', 'buildNumber',
+          'previousVersion', 'releaseDate', 'publicationTime', 'releaseTimestamp',
+          'releaseNotes', 'changelog', 'mandatoryUpdate', 'publicationStatus',
+          'apkFileName', 'apkFileSize', 'apkDownloadUrl', 'apkStoragePath',
+          'packageName', 'signingCertificateFingerprint', 'apkAvailable',
+          'adminUid', 'adminEmail', 'publishedBy'
+        ]) &&
+        data.keys().hasOnly([
+          'historyId', 'versionName', 'versionCode', 'buildNumber',
+          'previousVersion', 'releaseDate', 'publicationTime', 'releaseTimestamp',
+          'releaseNotes', 'changelog', 'mandatoryUpdate', 'publicationStatus',
+          'apkFileName', 'apkFileSize', 'apkDownloadUrl', 'apkStoragePath',
+          'packageName', 'signingCertificateFingerprint', 'apkAvailable',
+          'adminUid', 'adminEmail', 'publishedBy'
+        ]) &&
+        isValidId(data.historyId) &&
+        data.versionName is string && data.versionName.size() >= 1 && data.versionName.size() <= 40 &&
+        data.versionCode is int && data.versionCode >= 1 &&
+        data.buildNumber is int && data.buildNumber >= 1 &&
+        data.previousVersion is string && data.previousVersion.size() <= 60 &&
+        data.releaseDate is string && data.releaseDate.size() >= 4 && data.releaseDate.size() <= 40 &&
+        data.publicationTime is string && data.publicationTime.size() <= 40 &&
+        data.releaseTimestamp is timestamp && data.releaseTimestamp <= request.time &&
+        data.releaseNotes is string && data.releaseNotes.size() <= 5000 &&
+        data.changelog is string && data.changelog.size() <= 5000 &&
+        data.mandatoryUpdate is bool &&
+        data.publicationStatus in ['PUBLISHED', 'DRAFT', 'ARCHIVED'] &&
+        data.apkFileName is string && data.apkFileName.size() <= 255 &&
+        data.apkFileSize is int && data.apkFileSize >= 0 &&
+        data.apkDownloadUrl is string && data.apkDownloadUrl.size() <= 2000 &&
+        data.apkStoragePath is string && data.apkStoragePath.size() <= 500 &&
+        data.packageName is string && data.packageName.size() >= 3 && data.packageName.size() <= 150 &&
+        data.signingCertificateFingerprint is string && data.signingCertificateFingerprint.size() <= 128 &&
+        data.apkAvailable is bool &&
+        data.adminUid is string && data.adminUid.size() >= 1 && data.adminUid.size() <= 128 &&
+        data.adminEmail is string && data.adminEmail.size() <= 200 &&
+        data.publishedBy is string && data.publishedBy.size() >= 1 && data.publishedBy.size() <= 128;
     }
 
     function isValidDeviceAccountAssociation(data) {
@@ -194,9 +242,12 @@ service cloud.firestore {
         ]) &&
         data.keys().hasOnly([
           'installationId', 'deviceName', 'deviceModel', 'manufacturer', 'brand',
+          'modelCode', 'productName', 'cpuArch', 'ramInfo', 'totalRam', 'availableRam',
+          'screenResolution', 'screenDensity', 'connectionType',
           'androidVersion', 'sdkVersion', 'deviceType',
-          'accountStatus', 'associatedUserId', 'status', 'isAdminDevice',
-          'appVersionCode', 'appVersionName', 'registeredAt', 'firstUsedAt', 'lastActiveAt'
+          'accountStatus', 'associatedUserId', 'associatedEmail', 'status', 'isAdminDevice',
+          'appVersionCode', 'appVersionName', 'installedAt', 'registeredAt', 'firstUsedAt',
+          'lastActiveAt', 'lastSyncAt', 'deviceFingerprint', 'legacyInstallationId'
         ]) &&
         isValidId(data.installationId) && data.installationId.size() >= 8 &&
         data.deviceName is string && data.deviceName.size() >= 1 && data.deviceName.size() <= 120 &&
@@ -206,18 +257,32 @@ service cloud.firestore {
         (!('manufacturer' in data) || (data.manufacturer is string && data.manufacturer.size() <= 80 &&
           !(data.manufacturer.lower().matches('.*(robolectric|sdk_gphone).*')))) &&
         (!('brand' in data) || (data.brand is string && data.brand.size() <= 80)) &&
+        (!('modelCode' in data) || (data.modelCode is string && data.modelCode.size() <= 80)) &&
+        (!('productName' in data) || (data.productName is string && data.productName.size() <= 80)) &&
+        (!('cpuArch' in data) || (data.cpuArch is string && data.cpuArch.size() <= 60)) &&
+        (!('ramInfo' in data) || (data.ramInfo is string && data.ramInfo.size() <= 60)) &&
+        (!('totalRam' in data) || (data.totalRam is string && data.totalRam.size() <= 60)) &&
+        (!('availableRam' in data) || (data.availableRam is string && data.availableRam.size() <= 60)) &&
+        (!('screenResolution' in data) || (data.screenResolution is string && data.screenResolution.size() <= 40)) &&
+        (!('screenDensity' in data) || (data.screenDensity is string && data.screenDensity.size() <= 40)) &&
+        (!('connectionType' in data) || (data.connectionType is string && data.connectionType.size() <= 40)) &&
         (!('androidVersion' in data) || (data.androidVersion is string && data.androidVersion.size() <= 40)) &&
         (!('sdkVersion' in data) || (data.sdkVersion is int && data.sdkVersion >= 0 && data.sdkVersion <= 200)) &&
         (!('deviceType' in data) || (data.deviceType is string && data.deviceType.size() <= 40)) &&
         (!('accountStatus' in data) || data.accountStatus in ['GUEST', 'LOGGED_IN']) &&
         (!('associatedUserId' in data) || data.associatedUserId == null || (data.associatedUserId is string && data.associatedUserId.size() <= 128)) &&
+        (!('associatedEmail' in data) || data.associatedEmail == null || (data.associatedEmail is string && data.associatedEmail.size() <= 200)) &&
         (!('isAdminDevice' in data) || data.isAdminDevice is bool) &&
         data.status in ['ACTIVE', 'BLOCKED'] &&
         data.appVersionCode is int && data.appVersionCode >= 1 &&
         data.appVersionName is string && data.appVersionName.size() >= 1 && data.appVersionName.size() <= 40 &&
+        (!('installedAt' in data) || (data.installedAt is int && data.installedAt >= 0)) &&
+        (!('deviceFingerprint' in data) || (data.deviceFingerprint is string && data.deviceFingerprint.size() <= 128)) &&
+        (!('legacyInstallationId' in data) || data.legacyInstallationId == null || (data.legacyInstallationId is string && data.legacyInstallationId.size() <= 128)) &&
         data.registeredAt is timestamp && data.registeredAt <= request.time &&
         (!('firstUsedAt' in data) || (data.firstUsedAt is timestamp && data.firstUsedAt <= request.time)) &&
-        data.lastActiveAt is timestamp && data.lastActiveAt <= request.time;
+        data.lastActiveAt is timestamp && data.lastActiveAt <= request.time &&
+        (!('lastSyncAt' in data) || (data.lastSyncAt is timestamp && data.lastSyncAt <= request.time));
     }
 
 
@@ -323,15 +388,30 @@ service cloud.firestore {
     }
 
     // STORE PRO Live Updates collection:
-    // - Ordinary users and guests can read ONLY published releases (published == true)
-    // - Verified administrator can read, create drafts, publish updates, archive, and delete
+    // - Strictly Administrator-only for release drafting, publishing, and archival (no public update rollout)
     match /live_updates/{releaseId} {
-      allow get, list: if isAdmin() || resource.data.published == true;
+      allow get, list: if isAdmin();
       allow create, update: if isAdmin() &&
         isValidId(releaseId) &&
         isValidLiveUpdate(incoming()) &&
         incoming().releaseId == releaseId;
       allow delete: if isAdmin() && isValidId(releaseId);
+    }
+
+    // STORE PRO Update History collection:
+    // - Strictly Administrator-only, immutable archive preserving every historical version metadata record
+    match /store_pro_update_history/{historyId} {
+      allow get, list: if isAdmin();
+      allow create: if isAdmin() &&
+        isValidId(historyId) &&
+        isValidUpdateHistory(incoming()) &&
+        incoming().historyId == historyId &&
+        incoming().adminUid == request.auth.uid;
+      allow update: if isAdmin() &&
+        isValidId(historyId) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['apkAvailable']) &&
+        incoming().apkAvailable is bool;
+      allow delete: if false;
     }
 
     // Admin Roles collection: server-verified RBAC records; only bootstrapped admin can create/update/list
@@ -371,13 +451,11 @@ service cloud.firestore {
             (!('isAdminDevice' in incoming()) ||
               (!('isAdminDevice' in existing()) && incoming().isAdminDevice == false) ||
               ('isAdminDevice' in existing() && incoming().isAdminDevice == existing().isAdminDevice)) &&
-            isValidDeviceAccountAssociation(incoming()) &&
-            incoming().diff(existing()).affectedKeys().hasOnly([
-              'deviceName', 'deviceModel', 'manufacturer', 'brand',
-              'androidVersion', 'sdkVersion', 'deviceType',
-              'accountStatus', 'associatedUserId', 'appVersionCode',
-              'appVersionName', 'lastActiveAt'
-            ]))
+            (!('deviceFingerprint' in incoming()) ||
+              !('deviceFingerprint' in existing()) ||
+              existing().deviceFingerprint == '' ||
+              incoming().deviceFingerprint == existing().deviceFingerprint) &&
+            isValidDeviceAccountAssociation(incoming()))
         );
       allow delete: if isAdmin() && isValidId(installationId);
     }

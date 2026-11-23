@@ -26,6 +26,7 @@ import com.example.data.device.DeviceIdentityProvider
 import com.example.data.device.DeviceManager
 import com.example.data.model.RegisteredDevice
 import com.example.data.model.UserProfile
+import com.example.data.repository.DeviceAndUpdateRepository
 import com.example.notifications.StoreProMessagingService
 import com.example.notifications.StoreProNotificationHelper
 import com.example.ui.device.AccessBlockedScreen
@@ -178,6 +179,81 @@ class DeviceAndNotificationTest {
             RegisteredDevice.NOT_AVAILABLE,
             realDevice.copy(firstUsedAt = 0L, registeredAt = 0L).formattedUsageDuration(now)
         )
+
+        // Real RAM formatting & fallbacks
+        assertEquals("8.00 GB", DeviceIdentityProvider.formatMemoryBytes(8L * 1024L * 1024L * 1024L))
+        assertEquals("512 MB", DeviceIdentityProvider.formatMemoryBytes(512L * 1024L * 1024L))
+        assertEquals(RegisteredDevice.NOT_AVAILABLE, DeviceIdentityProvider.formatMemoryBytes(0L))
+    }
+
+    @Test
+    fun deduplicateDevices_mergesSamePhysicalDuplicatesWithoutMergingDifferentSameModelPhones() {
+        val pkg = "com.aistudio.storepro.vqxknp"
+        val phone1Canonical = DeviceIdentityProvider.computeCanonicalInstallationId(pkg, "android_id_phone_one_aaa")
+        val phone1Fp = DeviceIdentityProvider.computeDeviceFingerprint(pkg, "android_id_phone_one_aaa")
+        val phone2Canonical = DeviceIdentityProvider.computeCanonicalInstallationId(pkg, "android_id_phone_two_bbb")
+        val phone2Fp = DeviceIdentityProvider.computeDeviceFingerprint(pkg, "android_id_phone_two_bbb")
+
+        // Two physical phones of the exact same model (SM-S921B) MUST produce distinct canonical IDs
+        assertNotEquals(phone1Canonical, phone2Canonical)
+        assertNotEquals(phone1Fp, phone2Fp)
+
+        val now = 1_760_000_000_000L
+        val rawRecords = listOf(
+            // Phone 1 legacy guest doc before reinstall/upgrade
+            RegisteredDevice(
+                installationId = "sp_legacy_uuid_111",
+                deviceName = "Galaxy S24",
+                deviceModel = "SM-S921B",
+                manufacturer = "Samsung",
+                accountStatus = RegisteredDevice.ACCOUNT_STATUS_GUEST,
+                status = RegisteredDevice.STATUS_ACTIVE,
+                registeredAt = now - 10L * 86_400_000L,
+                firstUsedAt = now - 10L * 86_400_000L,
+                lastActiveAt = now - 3_600_000L
+            ),
+            // Phone 1 canonical doc after upgrade/reinstall + Gmail sign-in
+            RegisteredDevice(
+                installationId = phone1Canonical,
+                legacyInstallationId = "sp_legacy_uuid_111",
+                deviceFingerprint = phone1Fp,
+                deviceName = "Galaxy S24",
+                deviceModel = "SM-S921B",
+                manufacturer = "Samsung",
+                accountStatus = RegisteredDevice.ACCOUNT_STATUS_LOGGED_IN,
+                associatedUserId = "uid_user_1",
+                associatedEmail = "user1@gmail.com",
+                status = RegisteredDevice.STATUS_ACTIVE,
+                registeredAt = now - 60_000L,
+                firstUsedAt = now - 60_000L,
+                lastActiveAt = now
+            ),
+            // Phone 2: completely separate physical Galaxy S24 (same model, different physical deviceFingerprint)
+            RegisteredDevice(
+                installationId = phone2Canonical,
+                deviceFingerprint = phone2Fp,
+                deviceName = "Galaxy S24",
+                deviceModel = "SM-S921B",
+                manufacturer = "Samsung",
+                accountStatus = RegisteredDevice.ACCOUNT_STATUS_GUEST,
+                status = RegisteredDevice.STATUS_ACTIVE,
+                registeredAt = now - 2_000L,
+                firstUsedAt = now - 2_000L,
+                lastActiveAt = now - 1_000L
+            )
+        )
+
+        val deduped = DeviceAndUpdateRepository.deduplicateDevices(rawRecords)
+        // Phone 1 duplicates merged -> 1; Phone 2 kept completely separate -> total 2
+        assertEquals(2, deduped.size)
+        val mergedPhone1 = deduped.first { it.installationId == phone1Canonical }
+        assertEquals(now - 10L * 86_400_000L, mergedPhone1.firstUsedAt)
+        assertEquals(now, mergedPhone1.lastActiveAt)
+        assertEquals("user1@gmail.com", mergedPhone1.associatedEmail)
+        assertTrue(mergedPhone1.isLoggedInAccount)
+
+        val distinctPhone2 = deduped.first { it.installationId == phone2Canonical }
+        assertFalse(distinctPhone2.isLoggedInAccount)
     }
 
     @Test
@@ -297,19 +373,31 @@ class DeviceAndNotificationTest {
                 installationId = "dev_a",
                 deviceName = "Galaxy S24",
                 deviceModel = "SM-S921B",
+                modelCode = "S921B",
+                productName = "dm1qxxx",
                 manufacturer = "Samsung",
                 brand = "Samsung",
                 androidVersion = "14",
                 sdkVersion = 34,
+                cpuArch = "arm64-v8a",
+                ramInfo = "8.00 GB",
+                totalRam = "8.00 GB",
+                availableRam = "3.25 GB",
+                screenResolution = "1080 x 2340",
+                screenDensity = "420 dpi",
+                connectionType = "Wi-Fi",
                 deviceType = "Phone",
                 accountStatus = RegisteredDevice.ACCOUNT_STATUS_LOGGED_IN,
                 associatedUserId = "uid_alice_1234",
+                associatedEmail = "alice@example.com",
                 status = RegisteredDevice.STATUS_ACTIVE,
-                appVersionCode = 2,
-                appVersionName = "1.1",
+                appVersionCode = 3,
+                appVersionName = "1.2",
+                installedAt = now - 5L * 86_400_000L,
                 firstUsedAt = now - 5L * 86_400_000L,
                 registeredAt = now - 5L * 86_400_000L,
-                lastActiveAt = now
+                lastActiveAt = now,
+                lastSyncAt = now
             ),
             RegisteredDevice(
                 installationId = "dev_c",
@@ -362,6 +450,7 @@ class DeviceAndNotificationTest {
         )
         var toggledId: String? = null
         var deletedId: String? = null
+        var refreshCalls = 0
 
         composeRule.setContent {
             MyApplicationTheme(darkTheme = true) {
@@ -382,7 +471,8 @@ class DeviceAndNotificationTest {
                     onAdminLogout = {},
                     onSignOut = {},
                     onToggleDeviceBlock = { toggledId = it.installationId },
-                    onDeleteDevice = { deletedId = it }
+                    onDeleteDevice = { deletedId = it },
+                    onRefreshDevices = { refreshCalls++ }
                 )
             }
         }
@@ -398,7 +488,7 @@ class DeviceAndNotificationTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("profile_tab_device").assertDoesNotExist()
 
-        // Verified Administrator gets Device tab and real-time dashboard
+        // Verified Administrator gets Device tab and real-time dashboard with dedicated REFRESH button
         isServerVerified = true
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("profile_lazy_column").performScrollToNode(hasTestTag("profile_tab_device"))
@@ -408,7 +498,8 @@ class DeviceAndNotificationTest {
         composeRule.onNodeWithTag("profile_lazy_column").performScrollToNode(hasTestTag("device_dashboard_summary"))
         composeRule.onNodeWithTag("device_dashboard_summary").assertIsDisplayed()
         composeRule.onNodeWithTag("device_live_badge").assertIsDisplayed()
-        composeRule.onNodeWithTag("device_refresh_button").assertDoesNotExist()
+        composeRule.onNodeWithTag("device_refresh_button").assertIsDisplayed().performClick()
+        assertEquals(1, refreshCalls)
 
         // Consistent math excluding fake/emulator rows: Total(3) = Active(1) + Offline(2), Blocked(1)
         composeRule.onNodeWithTag("device_total_count").assertTextContains("3")
@@ -420,7 +511,7 @@ class DeviceAndNotificationTest {
         composeRule.onNodeWithTag("device_card_dev_fake_robo").assertDoesNotExist()
         composeRule.onNodeWithTag("device_card_dev_fake_emu").assertDoesNotExist()
 
-        // Expand genuine device details & verify extended hardware + duration metadata
+        // Expand genuine device details & verify extended hardware + network + email metadata
         composeRule.onNodeWithTag("profile_lazy_column").performScrollToNode(hasTestTag("device_card_dev_a"))
         composeRule.onNodeWithText("Galaxy S24").assertIsDisplayed()
         composeRule.onNodeWithText("SM-S921B").assertIsDisplayed()
@@ -429,6 +520,11 @@ class DeviceAndNotificationTest {
         composeRule.onNodeWithTag("device_details_panel_dev_a").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Android 14").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("API 34").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("arm64-v8a").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("8.00 GB").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("3.25 GB").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Wi-Fi").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("alice@example.com").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("5 Days").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("dev_a").performScrollTo().assertIsDisplayed()
 

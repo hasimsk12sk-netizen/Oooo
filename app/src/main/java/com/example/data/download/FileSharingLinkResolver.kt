@@ -2,21 +2,17 @@ package com.example.data.download
 
 import android.util.Log
 import androidx.core.net.toUri
+import com.example.util.StoreProNetworkClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
 object FileSharingLinkResolver {
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build()
+    private val httpClient: OkHttpClient
+        get() = StoreProNetworkClient.downloadClient
 
     private fun extractHostLower(url: String): String {
         return try {

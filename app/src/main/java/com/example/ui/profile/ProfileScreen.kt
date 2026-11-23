@@ -1,10 +1,21 @@
 package com.example.ui.profile
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +30,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.platform.LocalDensity
+import coil.size.Precision
+import com.example.ui.components.rememberLifecycleIsResumed
+import com.example.util.DisplayRefreshRateOptimizer
+import com.example.util.StoreProShareHelper
+import kotlin.math.roundToInt
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -33,6 +52,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -64,6 +84,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -83,6 +104,7 @@ import com.example.data.model.RegisteredDevice
 import com.example.data.model.SavedAppItem
 import com.example.data.model.UserProfile
 import com.example.ui.admin.AdminAuthManager
+import com.example.ui.components.RgbNeonPalette
 import com.example.ui.components.rgbNeonGlowBorder
 import com.example.ui.theme.StoreProCardBorder
 import com.example.ui.theme.StoreProPrimaryGreen
@@ -112,12 +134,24 @@ fun ProfileScreen(
     notificationsEnabled: Boolean = true,
     onToggleDeviceBlock: (RegisteredDevice) -> Unit = {},
     onDeleteDevice: (String) -> Unit = {},
+    isRefreshingDevices: Boolean = false,
+    lastDeviceSyncAtMs: Long = 0L,
+    onRefreshDevices: () -> Unit = {},
+    onCleanupStaleDevices: () -> Unit = {},
     onEnableNotifications: () -> Unit = {},
     onWhatsAppClick: (() -> Unit)? = null,
     onTelegramClick: (() -> Unit)? = null,
+    onShareStoreProClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val isResumed = rememberLifecycleIsResumed()
+    val reducedMotion = remember(context) { RgbNeonPalette.isReducedMotionEnabled(context) }
+    val powerSave = remember(context, isResumed) { DisplayRefreshRateOptimizer.isPowerSaveMode(context) }
+    val animateSocial = isResumed && !reducedMotion && !powerSave
+    val imageLoader = remember(context) { UniversalImageLoader.get(context) }
+    val avatarSizePx = remember(density) { with(density) { 80.dp.toPx().roundToInt().coerceAtLeast(160) } }
     val canAccessAdminDeviceTab = isAdminAuthorized && isServerAdminVerified
     val tabs = remember(canAccessAdminDeviceTab) {
         if (canAccessAdminDeviceTab) {
@@ -135,6 +169,27 @@ fun ProfileScreen(
     val normalizedAvatar = remember(userProfile?.avatarUrl) {
         userProfile?.avatarUrl?.takeIf { it.isNotBlank() }?.let { UniversalImageUtils.normalizeImageUrl(it) }
     }
+    val avatarRequest = remember(context, normalizedAvatar, avatarSizePx) {
+        normalizedAvatar?.let {
+            ImageRequest.Builder(context)
+                .data(it)
+                .size(avatarSizePx, avatarSizePx)
+                .precision(Precision.INEXACT)
+                .crossfade(150)
+                .build()
+        }
+    }
+
+    val preparedDevices = remember(registeredDevices, canAccessAdminDeviceTab, selectedTab) {
+        if (canAccessAdminDeviceTab && selectedTab == 3) {
+            prepareGenuineDevices(registeredDevices)
+        } else {
+            emptyList()
+        }
+    }
+    val filteredDevices = remember(preparedDevices, deviceSearchQuery) {
+        filterGenuineDevices(preparedDevices, deviceSearchQuery)
+    }
 
     LaunchedEffect(tabs.size) {
         if (selectedTab >= tabs.size) {
@@ -142,12 +197,13 @@ fun ProfileScreen(
         }
     }
 
-    // Periodic clock tick keeps Active/Offline metrics & relative timestamps auto-updating in real time
-    LaunchedEffect(selectedTab, canAccessAdminDeviceTab) {
-        if (canAccessAdminDeviceTab && selectedTab == 3) {
+    // Periodic clock tick keeps Online/Offline metrics & relative timestamps auto-updating only when resumed on Device tab
+    LaunchedEffect(selectedTab, canAccessAdminDeviceTab, isResumed, lastDeviceSyncAtMs) {
+        deviceNowMs = System.currentTimeMillis()
+        if (canAccessAdminDeviceTab && selectedTab == 3 && isResumed) {
             while (true) {
+                delay(10_000L)
                 deviceNowMs = System.currentTimeMillis()
-                delay(15_000L)
             }
         }
     }
@@ -159,30 +215,159 @@ fun ProfileScreen(
             .testTag("profile_lazy_column"),
         contentPadding = PaddingValues(bottom = 80.dp)
     ) {
-        // User / Guest Header Card with Centered Avatar & WhatsApp (Left) + Telegram (Right) Icons
-        item {
-            Card(
-                shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF131B2E)),
-                border = CardDefaults.outlinedCardBorder().copy(
-                    brush = androidx.compose.ui.graphics.SolidColor(StoreProCardBorder)
-                ),
+        // User / Guest Header Card with Centered Avatar & WhatsApp (Left) + Telegram (Right) + Share STORE PRO (Top-Right)
+        item(key = "profile_header_card", contentType = "profile_header") {
+            val shareInteractionSource = remember { MutableInteractionSource() }
+            val isSharePressed by shareInteractionSource.collectIsPressedAsState()
+            val shareScale by animateFloatAsState(
+                targetValue = if (isSharePressed) 0.91f else 1f,
+                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                label = "profile_share_scale"
+            )
+
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
+                    .rgbNeonGlowBorder(
+                        seed = "profile_header_card",
+                        cornerRadius = 22.dp,
+                        borderWidth = 1.6.dp,
+                        glowIntensity = 0.88f
+                    )
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                Card(
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF131B2E)),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // Left: Official WhatsApp Community Button
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            // Top-Right Corner: Share STORE PRO Button positioned near/above Telegram without disturbing existing layout
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .size(48.dp)
+                                    .scale(shareScale)
+                                    .rgbNeonGlowBorder(
+                                        seed = "profile_share_storepro_btn",
+                                        cornerRadius = 15.dp,
+                                        borderWidth = 1.5.dp,
+                                        glowIntensity = 0.95f
+                                    )
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(RoundedCornerShape(15.dp))
+                                        .background(
+                                            Brush.linearGradient(
+                                                listOf(
+                                                    StoreProSecondaryCyan.copy(alpha = 0.18f),
+                                                    StoreProPrimaryGreen.copy(alpha = 0.18f)
+                                                )
+                                            )
+                                        )
+                                        .clickable(
+                                            interactionSource = shareInteractionSource,
+                                            indication = androidx.compose.material3.ripple(color = StoreProSecondaryCyan)
+                                        ) {
+                                            if (onShareStoreProClick != null) {
+                                                onShareStoreProClick()
+                                            } else {
+                                                StoreProShareHelper.shareStoreProApp(context)
+                                            }
+                                        }
+                                        .semantics {
+                                            contentDescription = "Share STORE PRO"
+                                            role = Role.Button
+                                        }
+                                        .testTag("profile_share_storepro_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Share,
+                                        contentDescription = "Share STORE PRO",
+                                        tint = StoreProSecondaryCyan,
+                                        modifier = Modifier.size(21.dp)
+                                    )
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                        val socialTransition = if (animateSocial) {
+                            rememberInfiniteTransition(label = "social_icon_motion")
+                        } else {
+                            null
+                        }
+                        val waFloatYState = socialTransition?.animateFloat(
+                            initialValue = -3.5f,
+                            targetValue = 3.5f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(durationMillis = 2400, easing = FastOutSlowInEasing),
+                                repeatMode = RepeatMode.Reverse
+                            ),
+                            label = "wa_float_y"
+                        )
+                        val waDriftXState = socialTransition?.animateFloat(
+                            initialValue = -2f,
+                            targetValue = 2f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(durationMillis = 3200, easing = FastOutSlowInEasing),
+                                repeatMode = RepeatMode.Reverse
+                            ),
+                            label = "wa_drift_x"
+                        )
+                        val waScaleState = socialTransition?.animateFloat(
+                            initialValue = 0.97f,
+                            targetValue = 1.05f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(durationMillis = 2000, easing = FastOutSlowInEasing),
+                                repeatMode = RepeatMode.Reverse
+                            ),
+                            label = "wa_pulse"
+                        )
+
+                        val tgGlideXState = socialTransition?.animateFloat(
+                            initialValue = 2.5f,
+                            targetValue = -2.5f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(durationMillis = 2600, easing = FastOutSlowInEasing),
+                                repeatMode = RepeatMode.Reverse
+                            ),
+                            label = "tg_glide_x"
+                        )
+                        val tgFloatYState = socialTransition?.animateFloat(
+                            initialValue = 3.5f,
+                            targetValue = -3.5f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(durationMillis = 2100, easing = FastOutSlowInEasing),
+                                repeatMode = RepeatMode.Reverse
+                            ),
+                            label = "tg_float_y"
+                        )
+                        val tgTiltState = socialTransition?.animateFloat(
+                            initialValue = -3.5f,
+                            targetValue = 3.5f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(durationMillis = 2800, easing = FastOutSlowInEasing),
+                                repeatMode = RepeatMode.Reverse
+                            ),
+                            label = "tg_tilt"
+                        )
+
+                        // Left: Official WhatsApp Community Button (graphicsLayer reads prevent header recomposition)
                         SocialBrandIconButton(
                             contentDescription = "Join WhatsApp group",
                             backgroundColor = Color(0xFF25D366).copy(alpha = 0.14f),
@@ -194,12 +379,20 @@ fun ProfileScreen(
                                     SocialLinkLauncher.openWhatsAppCommunity(context)
                                 }
                             },
-                            modifier = Modifier.testTag("profile_whatsapp_button")
+                            modifier = Modifier
+                                .graphicsLayer {
+                                    translationX = waDriftXState?.value ?: 0f
+                                    translationY = waFloatYState?.value ?: 0f
+                                    val s = waScaleState?.value ?: 1f
+                                    scaleX = s
+                                    scaleY = s
+                                }
+                                .testTag("profile_whatsapp_button")
                         ) {
                             WhatsAppBrandGlyph(modifier = Modifier.size(28.dp))
                         }
 
-                        // Center: Existing Profile Avatar
+                        // Center: Existing Profile Avatar (remains cleanly stationary)
                         Box(
                             modifier = Modifier
                                 .size(80.dp)
@@ -213,13 +406,10 @@ fun ProfileScreen(
                                 .testTag("profile_avatar_box"),
                             contentAlignment = Alignment.Center
                         ) {
-                            if (normalizedAvatar != null) {
+                            if (avatarRequest != null) {
                                 AsyncImage(
-                                    model = ImageRequest.Builder(context)
-                                        .data(normalizedAvatar)
-                                        .crossfade(true)
-                                        .build(),
-                                    imageLoader = UniversalImageLoader.get(context),
+                                    model = avatarRequest,
+                                    imageLoader = imageLoader,
                                     contentDescription = "Avatar",
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
@@ -236,7 +426,7 @@ fun ProfileScreen(
                             }
                         }
 
-                        // Right: Official Telegram Channel Button
+                        // Right: Official Telegram Channel Button (graphicsLayer reads prevent header recomposition)
                         SocialBrandIconButton(
                             contentDescription = "Open Telegram channel",
                             backgroundColor = Color(0xFF229ED9).copy(alpha = 0.14f),
@@ -248,11 +438,18 @@ fun ProfileScreen(
                                     SocialLinkLauncher.openTelegramChannel(context)
                                 }
                             },
-                            modifier = Modifier.testTag("profile_telegram_button")
+                            modifier = Modifier
+                                .graphicsLayer {
+                                    translationX = tgGlideXState?.value ?: 0f
+                                    translationY = tgFloatYState?.value ?: 0f
+                                    rotationZ = tgTiltState?.value ?: 0f
+                                }
+                                .testTag("profile_telegram_button")
                         ) {
                             TelegramBrandGlyph(modifier = Modifier.size(28.dp))
                         }
                     }
+                        }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -318,25 +515,36 @@ fun ProfileScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Button(
-                            onClick = onOpenUpload,
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = StoreProPrimaryGreen,
-                                contentColor = Color(0xFF003816)
-                            ),
+                        Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .height(48.dp)
-                                .testTag("profile_upload_button")
+                                .rgbNeonGlowBorder(
+                                    seed = "profile_upload_btn",
+                                    cornerRadius = 12.dp,
+                                    borderWidth = 1.4.dp,
+                                    glowIntensity = 0.85f
+                                )
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.CloudUpload,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Upload App", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Button(
+                                onClick = onOpenUpload,
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = StoreProPrimaryGreen,
+                                    contentColor = Color(0xFF003816)
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("profile_upload_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudUpload,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Upload App", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
 
                         if (isSignedIn) {
@@ -401,6 +609,7 @@ fun ProfileScreen(
                             Text("Logout Admin Session", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
+                }
                 }
             }
         }
@@ -511,7 +720,7 @@ fun ProfileScreen(
                         )
                     }
                 } else {
-                    items(myUploads, key = { "upload_${it.appId}" }) { app ->
+                    items(myUploads, key = { "upload_${it.appId}" }, contentType = { "upload_card" }) { app ->
                         MyUploadItemCard(
                             app = app,
                             onEdit = { onEditApp(app) },
@@ -524,21 +733,21 @@ fun ProfileScreen(
 
             1 -> {
                 if (!isSignedIn) {
-                    item {
+                    item(key = "downloads_guest_empty", contentType = "empty_card") {
                         EmptyStateCard(
                             title = "Personal Download History",
                             subtitle = "Regular users can download apps without logging in. Sign in with Google if you want to sync download history across devices."
                         )
                     }
                 } else if (downloads.isEmpty()) {
-                    item {
+                    item(key = "downloads_empty", contentType = "empty_card") {
                         EmptyStateCard(
                             title = "No downloads yet",
                             subtitle = "Browse the marketplace and download applications directly online."
                         )
                     }
                 } else {
-                    items(downloads, key = { "dl_${it.downloadId}_${it.appId}" }) { dl ->
+                    items(downloads, key = { "dl_${it.downloadId}_${it.appId}" }, contentType = { "download_card" }) { dl ->
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -598,21 +807,21 @@ fun ProfileScreen(
 
             2 -> {
                 if (!isSignedIn) {
-                    item {
+                    item(key = "saved_guest_empty", contentType = "empty_card") {
                         EmptyStateCard(
                             title = "Saved Bookmarks",
                             subtitle = "Sign in with Google to bookmark applications and access them across devices."
                         )
                     }
                 } else if (savedApps.isEmpty()) {
-                    item {
+                    item(key = "saved_empty", contentType = "empty_card") {
                         EmptyStateCard(
                             title = "No saved applications",
                             subtitle = "Bookmark apps to access them quickly anytime."
                         )
                     }
                 } else {
-                    items(savedApps, key = { "saved_${it.appId}" }) { saved ->
+                    items(savedApps, key = { "saved_${it.appId}" }, contentType = { "saved_card" }) { saved ->
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -673,7 +882,8 @@ fun ProfileScreen(
             3 -> {
                 if (canAccessAdminDeviceTab) {
                     deviceManagementTabItems(
-                        devices = registeredDevices,
+                        genuineDevices = preparedDevices,
+                        filteredDevices = filteredDevices,
                         nowMs = deviceNowMs,
                         searchQuery = deviceSearchQuery,
                         onSearchQueryChange = { deviceSearchQuery = it },
@@ -686,7 +896,11 @@ fun ProfileScreen(
                             }
                         },
                         onToggleBlock = onToggleDeviceBlock,
-                        onRequestDeleteDevice = { target -> devicePendingDelete = target }
+                        onRequestDeleteDevice = { target -> devicePendingDelete = target },
+                        isRefreshing = isRefreshingDevices,
+                        lastSyncAtMs = lastDeviceSyncAtMs,
+                        onRefreshDevices = onRefreshDevices,
+                        onCleanupStaleDevices = onCleanupStaleDevices
                     )
                 } else {
                     item {
@@ -743,65 +957,71 @@ private fun SocialBrandIconButton(
 
 @Composable
 private fun WhatsAppBrandGlyph(modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
-        drawCircle(
-            brush = Brush.linearGradient(listOf(Color(0xFF25D366), Color(0xFF128C7E))),
-            radius = w * 0.44f,
-            center = Offset(w * 0.50f, h * 0.48f)
-        )
-        val tail = Path().apply {
-            moveTo(w * 0.22f, h * 0.74f)
-            lineTo(w * 0.11f, h * 0.92f)
-            lineTo(w * 0.36f, h * 0.85f)
-            close()
-        }
-        drawPath(path = tail, color = Color(0xFF128C7E))
-        val handset = Path().apply {
-            moveTo(w * 0.35f, h * 0.33f)
-            quadraticTo(w * 0.35f, h * 0.63f, w * 0.66f, h * 0.64f)
-        }
-        drawPath(
-            path = handset,
-            color = Color.White,
-            style = Stroke(
+    Spacer(
+        modifier = modifier.drawWithCache {
+            val w = size.width
+            val h = size.height
+            val bubbleBrush = Brush.linearGradient(listOf(Color(0xFF25D366), Color(0xFF128C7E)))
+            val radius = w * 0.44f
+            val center = Offset(w * 0.50f, h * 0.48f)
+            val tail = Path().apply {
+                moveTo(w * 0.22f, h * 0.74f)
+                lineTo(w * 0.11f, h * 0.92f)
+                lineTo(w * 0.36f, h * 0.85f)
+                close()
+            }
+            val handset = Path().apply {
+                moveTo(w * 0.35f, h * 0.33f)
+                quadraticTo(w * 0.35f, h * 0.63f, w * 0.66f, h * 0.64f)
+            }
+            val handsetStroke = Stroke(
                 width = w * 0.13f,
                 cap = StrokeCap.Round,
                 join = StrokeJoin.Round
             )
-        )
-    }
+            onDrawBehind {
+                drawCircle(brush = bubbleBrush, radius = radius, center = center)
+                drawPath(path = tail, color = Color(0xFF128C7E))
+                drawPath(path = handset, color = Color.White, style = handsetStroke)
+            }
+        }
+    )
 }
 
 @Composable
 private fun TelegramBrandGlyph(modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
-        drawCircle(
-            brush = Brush.linearGradient(listOf(Color(0xFF34B7F1), Color(0xFF0088CC))),
-            radius = w * 0.45f,
-            center = Offset(w * 0.50f, h * 0.50f)
-        )
-        val paperPlane = Path().apply {
-            moveTo(w * 0.21f, h * 0.50f)
-            lineTo(w * 0.76f, h * 0.28f)
-            lineTo(w * 0.65f, h * 0.75f)
-            lineTo(w * 0.49f, h * 0.61f)
-            lineTo(w * 0.41f, h * 0.70f)
-            lineTo(w * 0.40f, h * 0.56f)
-            close()
+    Spacer(
+        modifier = modifier.drawWithCache {
+            val w = size.width
+            val h = size.height
+            val bgBrush = Brush.linearGradient(listOf(Color(0xFF34B7F1), Color(0xFF0088CC)))
+            val radius = w * 0.45f
+            val center = Offset(w * 0.50f, h * 0.50f)
+            val paperPlane = Path().apply {
+                moveTo(w * 0.21f, h * 0.50f)
+                lineTo(w * 0.76f, h * 0.28f)
+                lineTo(w * 0.65f, h * 0.75f)
+                lineTo(w * 0.49f, h * 0.61f)
+                lineTo(w * 0.41f, h * 0.70f)
+                lineTo(w * 0.40f, h * 0.56f)
+                close()
+            }
+            val lineStart = Offset(w * 0.40f, h * 0.56f)
+            val lineEnd = Offset(w * 0.69f, h * 0.35f)
+            val lineWidth = w * 0.055f
+            onDrawBehind {
+                drawCircle(brush = bgBrush, radius = radius, center = center)
+                drawPath(path = paperPlane, color = Color.White)
+                drawLine(
+                    color = Color(0xFF0088CC),
+                    start = lineStart,
+                    end = lineEnd,
+                    strokeWidth = lineWidth,
+                    cap = StrokeCap.Round
+                )
+            }
         }
-        drawPath(path = paperPlane, color = Color.White)
-        drawLine(
-            color = Color(0xFF0088CC),
-            start = Offset(w * 0.40f, h * 0.56f),
-            end = Offset(w * 0.69f, h * 0.35f),
-            strokeWidth = w * 0.055f,
-            cap = StrokeCap.Round
-        )
-    }
+    )
 }
 
 @Composable
@@ -812,7 +1032,18 @@ private fun MyUploadItemCard(
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val imageLoader = remember(context) { UniversalImageLoader.get(context) }
+    val iconSizePx = remember(density) { with(density) { 48.dp.toPx().roundToInt().coerceAtLeast(96) } }
     val normalizedIconUrl = remember(app.iconUrl) { UniversalImageUtils.normalizeImageUrl(app.iconUrl) }
+    val iconRequest = remember(context, normalizedIconUrl, iconSizePx) {
+        ImageRequest.Builder(context)
+            .data(normalizedIconUrl)
+            .size(iconSizePx, iconSizePx)
+            .precision(Precision.INEXACT)
+            .crossfade(150)
+            .build()
+    }
 
     Box(
         modifier = Modifier
@@ -845,11 +1076,8 @@ private fun MyUploadItemCard(
                     contentAlignment = Alignment.Center
                 ) {
                     AsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(normalizedIconUrl)
-                            .crossfade(true)
-                            .build(),
-                        imageLoader = UniversalImageLoader.get(context),
+                        model = iconRequest,
+                        imageLoader = imageLoader,
                         contentDescription = app.appName,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()

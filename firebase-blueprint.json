@@ -163,20 +163,70 @@
         "deviceModel": { "type": "string", "description": "Device model name or number" },
         "manufacturer": { "type": "string", "description": "Hardware manufacturer name" },
         "brand": { "type": "string", "description": "Device brand name" },
+        "modelCode": { "type": "string", "description": "Hardware Build.MODEL identifier" },
+        "productName": { "type": "string", "description": "Hardware Build.PRODUCT identifier" },
+        "cpuArch": { "type": "string", "description": "Primary CPU ABI architecture" },
+        "ramInfo": { "type": "string", "description": "Total physical RAM summary" },
+        "totalRam": { "type": "string", "description": "Formatted total physical RAM" },
+        "availableRam": { "type": "string", "description": "Formatted available RAM at sync time" },
+        "screenResolution": { "type": "string", "description": "Display resolution in pixels" },
+        "screenDensity": { "type": "string", "description": "Display pixel density in DPI" },
+        "connectionType": { "type": "string", "description": "Active network transport type" },
         "androidVersion": { "type": "string", "description": "Android OS release version" },
         "sdkVersion": { "type": "number", "description": "Android API / SDK integer level" },
         "deviceType": { "type": "string", "description": "Phone or Tablet classification" },
         "accountStatus": { "type": "string", "enum": ["GUEST", "LOGGED_IN"], "description": "Current Gmail sign-in association status" },
         "associatedUserId": { "type": "string", "description": "Optional Firebase Auth UID associated with this installation" },
+        "associatedEmail": { "type": "string", "description": "Optional signed-in email associated with this installation" },
         "status": { "type": "string", "enum": ["ACTIVE", "BLOCKED"], "description": "Authorization status controlled by verified admin" },
         "isAdminDevice": { "type": "boolean", "description": "Server-protected flag marking verified administrator devices" },
         "appVersionCode": { "type": "number", "description": "Installed versionCode" },
         "appVersionName": { "type": "string", "description": "Installed versionName" },
+        "installedAt": { "type": "number", "description": "PackageManager firstInstallTime epoch millis" },
         "registeredAt": { "type": "string", "format": "date-time", "description": "Server timestamp of initial registration (FieldValue.serverTimestamp())" },
         "firstUsedAt": { "type": "string", "format": "date-time", "description": "Immutable first-launch timestamp (FieldValue.serverTimestamp())" },
-        "lastActiveAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last heartbeat (FieldValue.serverTimestamp())" }
+        "lastActiveAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last heartbeat (FieldValue.serverTimestamp())" },
+        "lastSyncAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last sync" },
+        "deviceFingerprint": { "type": "string", "description": "Non-PII app-scoped SHA-256 physical device identifier for safe deduplication" },
+        "legacyInstallationId": { "type": "string", "description": "Optional prior random UUID replaced by canonical installationId" }
       },
       "required": ["installationId", "deviceName", "deviceModel", "status", "appVersionCode", "appVersionName", "registeredAt", "lastActiveAt"]
+    },
+    "UpdateHistoryRecord": {
+      "title": "UpdateHistoryRecord",
+      "description": "Immutable Admin-only historical release metadata preserving every STORE PRO version and APK download link.",
+      "type": "object",
+      "properties": {
+        "historyId": { "type": "string" },
+        "versionName": { "type": "string" },
+        "versionCode": { "type": "number" },
+        "buildNumber": { "type": "number" },
+        "previousVersion": { "type": "string" },
+        "releaseDate": { "type": "string" },
+        "publicationTime": { "type": "string" },
+        "releaseTimestamp": { "type": "string", "format": "date-time" },
+        "releaseNotes": { "type": "string" },
+        "changelog": { "type": "string" },
+        "mandatoryUpdate": { "type": "boolean" },
+        "publicationStatus": { "type": "string", "enum": ["PUBLISHED", "DRAFT", "ARCHIVED"] },
+        "apkFileName": { "type": "string" },
+        "apkFileSize": { "type": "number" },
+        "apkDownloadUrl": { "type": "string" },
+        "apkStoragePath": { "type": "string" },
+        "packageName": { "type": "string" },
+        "signingCertificateFingerprint": { "type": "string" },
+        "apkAvailable": { "type": "boolean" },
+        "adminUid": { "type": "string" },
+        "adminEmail": { "type": "string" },
+        "publishedBy": { "type": "string" }
+      },
+      "required": [
+        "historyId", "versionName", "versionCode", "buildNumber", "previousVersion",
+        "releaseDate", "publicationTime", "releaseTimestamp", "releaseNotes", "changelog",
+        "mandatoryUpdate", "publicationStatus", "apkFileName", "apkFileSize", "apkDownloadUrl",
+        "apkStoragePath", "packageName", "signingCertificateFingerprint", "apkAvailable",
+        "adminUid", "adminEmail", "publishedBy"
+      ]
     },
 
     "AdminRoleRecord": {
@@ -229,7 +279,11 @@
     },
     "/live_updates/{releaseId}": {
       "schema": { "$ref": "#/entities/LiveUpdateRelease" },
-      "description": "Unified STORE PRO Live Update releases and drafts. Ordinary users read only published == true; verified administrator manages drafts, publishing, and archives."
+      "description": "Admin-only STORE PRO Live Update releases and drafts (never exposed publicly)."
+    },
+    "/store_pro_update_history/{historyId}": {
+      "schema": { "$ref": "#/entities/UpdateHistoryRecord" },
+      "description": "Immutable Admin-only archive preserving every published release and permanent APK Storage URL."
     },
     "/registered_devices/{installationId}": {
       "schema": { "$ref": "#/entities/RegisteredDevice" },

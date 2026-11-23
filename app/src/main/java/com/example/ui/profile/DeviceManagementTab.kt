@@ -20,17 +20,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,6 +51,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -60,52 +64,65 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val DateOnlyFormatter = SimpleDateFormat("MMM dd, yyyy", Locale.US)
-private val DateTimeFormatter = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.US)
+private val DateOnlyFormatterLocal = ThreadLocal.withInitial { SimpleDateFormat("MMM dd, yyyy", Locale.US) }
+private val DateTimeFormatterLocal = ThreadLocal.withInitial { SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.US) }
+
+internal fun prepareGenuineDevices(devices: List<RegisteredDevice>): List<RegisteredDevice> {
+    if (devices.isEmpty()) return emptyList()
+    return devices
+        .filter { it.isGenuineDeviceRecord() }
+        .distinctBy { it.installationId }
+        .sortedByDescending { it.lastActiveAt }
+}
+
+internal fun filterGenuineDevices(
+    genuineDevices: List<RegisteredDevice>,
+    searchQuery: String
+): List<RegisteredDevice> {
+    val trimmedQuery = searchQuery.trim()
+    if (trimmedQuery.isEmpty() || genuineDevices.isEmpty()) return genuineDevices
+    return genuineDevices.filter { device ->
+        val accountLabel = if (device.isLoggedInAccount) "Logged In Gmail" else "Guest"
+        device.deviceName.contains(trimmedQuery, ignoreCase = true) ||
+            device.manufacturer.contains(trimmedQuery, ignoreCase = true) ||
+            device.brand.contains(trimmedQuery, ignoreCase = true) ||
+            device.deviceModel.contains(trimmedQuery, ignoreCase = true) ||
+            device.modelCode.contains(trimmedQuery, ignoreCase = true) ||
+            device.associatedEmail.orEmpty().contains(trimmedQuery, ignoreCase = true) ||
+            device.associatedUserId.orEmpty().contains(trimmedQuery, ignoreCase = true) ||
+            accountLabel.contains(trimmedQuery, ignoreCase = true) ||
+            device.installationId.contains(trimmedQuery, ignoreCase = true)
+    }
+}
 
 /**
  * Renders the Admin-only real-time Device Management dashboard inside My Library's LazyColumn.
- * Automatically synchronized via live Firestore snapshot listeners (no manual Refresh button),
- * excludes emulator/fake/test records, displays consistent counts (Total = Active + Offline),
- * supports search across name/manufacturer/brand/model/account, expandable authentic details,
- * Block/Unblock actions, and Delete with confirmation dialog.
+ * Synchronized via live Firestore listeners plus a dedicated manual Refresh action, deduplicated
+ * per installationId, displays accurate counts (Total = Active + Offline), supports search across
+ * hardware/model/email/account, full hardware & network details, stale cleanup, Block/Unblock, and Delete.
  */
 fun LazyListScope.deviceManagementTabItems(
-    devices: List<RegisteredDevice>,
+    genuineDevices: List<RegisteredDevice>,
+    filteredDevices: List<RegisteredDevice>,
     nowMs: Long = System.currentTimeMillis(),
     searchQuery: String = "",
     onSearchQueryChange: (String) -> Unit = {},
     expandedDeviceIds: Set<String> = emptySet(),
     onToggleExpandDevice: (String) -> Unit = {},
     onToggleBlock: (RegisteredDevice) -> Unit,
-    onRequestDeleteDevice: (RegisteredDevice) -> Unit
+    onRequestDeleteDevice: (RegisteredDevice) -> Unit,
+    isRefreshing: Boolean = false,
+    lastSyncAtMs: Long = 0L,
+    onRefreshDevices: () -> Unit = {},
+    onCleanupStaleDevices: () -> Unit = {}
 ) {
-    val genuineDevices = devices
-        .filter { it.isGenuineDeviceRecord() }
-        .distinctBy { it.installationId }
-
     val totalDevices = genuineDevices.size
     val activeDevices = genuineDevices.count { it.isCurrentlyActive(nowMs) }
-    val offlineDevices = genuineDevices.count { it.isOffline(nowMs) }
+    val offlineDevices = totalDevices - activeDevices
     val blockedDevices = genuineDevices.count { it.isBlocked }
+    val staleCount = genuineDevices.count { it.isStaleOffline(nowMs) }
 
-    val trimmedQuery = searchQuery.trim()
-    val filteredDevices = if (trimmedQuery.isEmpty()) {
-        genuineDevices
-    } else {
-        genuineDevices.filter { device ->
-            val accountLabel = if (device.isLoggedInAccount) "Logged In" else "Guest"
-            device.deviceName.contains(trimmedQuery, ignoreCase = true) ||
-                device.manufacturer.contains(trimmedQuery, ignoreCase = true) ||
-                device.brand.contains(trimmedQuery, ignoreCase = true) ||
-                device.deviceModel.contains(trimmedQuery, ignoreCase = true) ||
-                device.associatedUserId.orEmpty().contains(trimmedQuery, ignoreCase = true) ||
-                accountLabel.contains(trimmedQuery, ignoreCase = true) ||
-                device.installationId.contains(trimmedQuery, ignoreCase = true)
-        }
-    }
-
-    item(key = "device_dashboard_summary") {
+    item(key = "device_dashboard_summary", contentType = "device_summary") {
         Card(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = StoreProCardBackground),
@@ -129,40 +146,111 @@ fun LazyListScope.deviceManagementTabItems(
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Live Device Dashboard",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(50),
-                        color = StoreProPrimaryGreen.copy(alpha = 0.14f),
-                        border = BorderStroke(1.dp, StoreProPrimaryGreen.copy(alpha = 0.35f)),
-                        modifier = Modifier.testTag("device_live_badge")
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .clip(CircleShape)
-                                    .background(StoreProPrimaryGreen)
-                            )
-                            Spacer(modifier = Modifier.width(5.dp))
+                        Column {
                             Text(
-                                text = "Live Sync",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = StoreProPrimaryGreen
+                                text = "Live Device Dashboard",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = if (lastSyncAtMs > 0L) {
+                                    "Synced ${formatRelativeTime(lastSyncAtMs, nowMs)}"
+                                } else {
+                                    "Real-time Firestore sync active"
+                                },
+                                fontSize = 10.5.sp,
+                                color = Color(0xFF94A3B8)
                             )
                         }
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = StoreProPrimaryGreen.copy(alpha = 0.14f),
+                            border = BorderStroke(1.dp, StoreProPrimaryGreen.copy(alpha = 0.35f)),
+                            modifier = Modifier.testTag("device_live_badge")
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(StoreProPrimaryGreen)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "LIVE",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = StoreProPrimaryGreen
+                                )
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = onRefreshDevices,
+                            enabled = !isRefreshing,
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, StoreProSecondaryCyan.copy(alpha = 0.7f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = StoreProSecondaryCyan),
+                            modifier = Modifier
+                                .height(48.dp)
+                                .testTag("device_refresh_button")
+                        ) {
+                            if (isRefreshing) {
+                                CircularProgressIndicator(
+                                    color = StoreProSecondaryCyan,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Refreshing", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Refresh Devices",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("REFRESH", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                if (staleCount > 0) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = onCleanupStaleDevices,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color(0xFFFBBF24).copy(alpha = 0.55f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFBBF24)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("device_cleanup_stale_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CleaningServices,
+                            contentDescription = "Clean stale devices",
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Remove $staleCount Stale Offline Record(s) (>30d inactive)",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
 
@@ -267,7 +355,7 @@ fun LazyListScope.deviceManagementTabItems(
     }
 
     if (genuineDevices.isEmpty()) {
-        item(key = "device_empty_state") {
+        item(key = "device_empty_state", contentType = "device_empty") {
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = StoreProCardBackground),
@@ -297,7 +385,7 @@ fun LazyListScope.deviceManagementTabItems(
             }
         }
     } else if (filteredDevices.isEmpty()) {
-        item(key = "device_search_empty") {
+        item(key = "device_search_empty", contentType = "device_empty") {
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = StoreProCardBackground),
@@ -328,7 +416,11 @@ fun LazyListScope.deviceManagementTabItems(
             }
         }
     } else {
-        items(filteredDevices, key = { it.installationId }) { device ->
+        items(
+            items = filteredDevices,
+            key = { it.installationId },
+            contentType = { "device_card" }
+        ) { device ->
             RegisteredDeviceCard(
                 device = device,
                 nowMs = nowMs,
@@ -442,17 +534,20 @@ private fun RegisteredDeviceCard(
 ) {
     val isBlocked = device.isBlocked
     val isActive = device.isCurrentlyActive(nowMs)
+    val isStale = !isBlocked && !isActive && device.isStaleOffline(nowMs)
     val statusColor = when {
         isBlocked -> Color(0xFFF87171)
         isActive -> StoreProPrimaryGreen
+        isStale -> Color(0xFFFBBF24)
         else -> Color(0xFF94A3B8)
     }
     val statusLabel = when {
         isBlocked -> "Blocked"
-        isActive -> "Active"
+        isActive -> "Online"
+        isStale -> "Offline (Stale)"
         else -> "Offline"
     }
-    val accountLabel = if (device.isLoggedInAccount) "Logged In" else "Guest"
+    val accountLabel = if (device.isLoggedInAccount) "Gmail" else "Guest"
     val accountColor = if (device.isLoggedInAccount) StoreProSecondaryCyan else Color(0xFFFBBF24)
 
     val resolvedName = device.deviceName.trim().ifBlank { RegisteredDevice.NOT_AVAILABLE }
@@ -464,8 +559,12 @@ private fun RegisteredDeviceCard(
         it.isNotBlank() && !it.equals(RegisteredDevice.NOT_AVAILABLE, ignoreCase = true)
     }?.let { "Android $it" } ?: RegisteredDevice.NOT_AVAILABLE
     val resolvedSdkVersion = if (device.sdkVersion > 0) "API ${device.sdkVersion}" else RegisteredDevice.NOT_AVAILABLE
+    val resolvedEmail = device.associatedEmail?.trim()?.ifBlank { null } ?: RegisteredDevice.NOT_AVAILABLE
     val firstUsedText = remember(device.effectiveFirstUsedAt) {
         formatDateOnly(device.effectiveFirstUsedAt)
+    }
+    val installedDateText = remember(device.effectiveInstalledAt) {
+        formatTimestamp(device.effectiveInstalledAt)
     }
     val usageDurationText = device.formattedUsageDuration(nowMs)
 
@@ -524,7 +623,15 @@ private fun RegisteredDeviceCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "$resolvedManufacturer • Last seen ${formatRelativeTime(device.lastActiveAt, nowMs)}",
+                        text = buildString {
+                            append(resolvedManufacturer)
+                            append(" • Last seen ")
+                            append(formatRelativeTime(device.lastActiveAt, nowMs))
+                            if (device.isLoggedInAccount && resolvedEmail != RegisteredDevice.NOT_AVAILABLE) {
+                                append(" • ")
+                                append(resolvedEmail)
+                            }
+                        },
                         fontSize = 11.sp,
                         color = Color(0xFF64748B),
                         maxLines = 1,
@@ -633,6 +740,15 @@ private fun RegisteredDeviceCard(
             }
 
             AnimatedVisibility(visible = isExpanded) {
+                val resolvedModelCode = device.modelCode.trim().ifBlank { resolvedModel }
+                val resolvedProduct = device.productName.trim().ifBlank { RegisteredDevice.NOT_AVAILABLE }
+                val resolvedCpu = device.cpuArch.trim().ifBlank { RegisteredDevice.NOT_AVAILABLE }
+                val resolvedTotalRam = device.resolvedTotalRam
+                val resolvedAvailableRam = device.resolvedAvailableRam
+                val resolvedResolution = device.screenResolution.trim().ifBlank { RegisteredDevice.NOT_AVAILABLE }
+                val resolvedDensity = device.screenDensity.trim().ifBlank { RegisteredDevice.NOT_AVAILABLE }
+                val resolvedConnection = device.connectionType.trim().ifBlank { RegisteredDevice.NOT_AVAILABLE }
+
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -647,11 +763,20 @@ private fun RegisteredDeviceCard(
                     DeviceDetailRow("Device Name", resolvedName)
                     DeviceDetailRow("Manufacturer", resolvedManufacturer)
                     DeviceDetailRow("Brand", resolvedBrand)
-                    DeviceDetailRow("Model Name", resolvedModel)
+                    DeviceDetailRow("Device Model", resolvedModel)
+                    DeviceDetailRow("Model Number", resolvedModelCode)
+                    DeviceDetailRow("Product", resolvedProduct)
                     DeviceDetailRow("Device Type", resolvedDeviceType)
                     DeviceDetailRow("Android Version", resolvedAndroidVersion)
-                    DeviceDetailRow("SDK Version", resolvedSdkVersion)
-                    DeviceDetailRow("Installation ID", device.installationId)
+                    DeviceDetailRow("Android SDK Version", resolvedSdkVersion)
+                    DeviceDetailRow("CPU Architecture", resolvedCpu)
+                    DeviceDetailRow("Total RAM", resolvedTotalRam)
+                    DeviceDetailRow("Available RAM", resolvedAvailableRam)
+                    DeviceDetailRow("Screen Resolution", resolvedResolution)
+                    DeviceDetailRow("Screen Density", resolvedDensity)
+                    DeviceDetailRow("Network Connection", resolvedConnection)
+                    DeviceDetailRow("App Version", "v${device.appVersionName} (${device.appVersionCode})")
+                    DeviceDetailRow("Installation Date", installedDateText)
                     DeviceDetailRow("First Used", firstUsedText)
                     DeviceDetailRow("Using STORE PRO", usageDurationText)
                     DeviceDetailRow(
@@ -659,16 +784,29 @@ private fun RegisteredDeviceCard(
                         "${formatTimestamp(device.lastActiveAt)} (${formatRelativeTime(device.lastActiveAt, nowMs)})"
                     )
                     DeviceDetailRow(
-                        "Account Status",
+                        "Last Synced",
+                        if (device.lastSyncAt > 0L) formatTimestamp(device.lastSyncAt) else RegisteredDevice.NOT_AVAILABLE
+                    )
+                    DeviceDetailRow(
+                        "Online / Offline Status",
+                        when {
+                            isBlocked -> "Blocked"
+                            isActive -> "Online (Active)"
+                            isStale -> "Offline (Stale >30d)"
+                            else -> "Offline"
+                        }
+                    )
+                    DeviceDetailRow(
+                        "Login Type",
                         if (device.isLoggedInAccount) {
                             val uidSuffix = device.associatedUserId?.take(8)?.let { " (UID: $it…)" }.orEmpty()
-                            "Logged In$uidSuffix"
+                            "Gmail (Logged In)$uidSuffix"
                         } else {
                             "Guest"
                         }
                     )
-                    DeviceDetailRow("Device Status", statusLabel)
-                    DeviceDetailRow("App Version", "v${device.appVersionName} (${device.appVersionCode})")
+                    DeviceDetailRow("Associated Gmail", resolvedEmail)
+                    DeviceDetailRow("Installation ID", device.installationId)
                 }
             }
         }
@@ -692,23 +830,21 @@ private fun DeviceDetailRow(label: String, value: String) {
             text = value,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
-            color = Color.White
+            color = Color.White,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f, fill = false)
         )
     }
 }
 
 private fun formatDateOnly(epochMs: Long): String {
     if (epochMs <= 0L) return RegisteredDevice.NOT_AVAILABLE
-    return synchronized(DateOnlyFormatter) {
-        DateOnlyFormatter.format(Date(epochMs))
-    }
+    return DateOnlyFormatterLocal.get()?.format(Date(epochMs)) ?: RegisteredDevice.NOT_AVAILABLE
 }
 
 private fun formatTimestamp(epochMs: Long): String {
     if (epochMs <= 0L) return RegisteredDevice.NOT_AVAILABLE
-    return synchronized(DateTimeFormatter) {
-        DateTimeFormatter.format(Date(epochMs))
-    }
+    return DateTimeFormatterLocal.get()?.format(Date(epochMs)) ?: RegisteredDevice.NOT_AVAILABLE
 }
 
 private fun formatRelativeTime(epochMs: Long, nowMs: Long): String {

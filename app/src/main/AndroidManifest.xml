@@ -49,6 +49,38 @@
                 <action android:name="OPEN_APP_DETAILS" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="@string/storepro_web_domain"
+                    android:pathPrefix="/app" />
+                <data
+                    android:scheme="https"
+                    android:host="@string/storepro_web_domain"
+                    android:pathPrefix="/install" />
+                <data
+                    android:scheme="https"
+                    android:host="@string/storepro_secondary_web_domain"
+                    android:pathPrefix="/app" />
+                <data
+                    android:scheme="https"
+                    android:host="@string/storepro_secondary_web_domain"
+                    android:pathPrefix="/install" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="storepro"
+                    android:host="app" />
+                <data
+                    android:scheme="storepro"
+                    android:host="install" />
+            </intent-filter>
         </activity>
 
         <meta-data

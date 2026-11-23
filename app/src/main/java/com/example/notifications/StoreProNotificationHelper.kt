@@ -35,13 +35,8 @@ object StoreProNotificationHelper {
     private const val KEY_SEEN_EVENT_IDS = "seen_notification_events"
     private const val MAX_SEEN_IDS = 100
 
-    private val imageClient: OkHttpClient by lazy {
-        OkHttpClient.Builder()
-            .connectTimeout(4, TimeUnit.SECONDS)
-            .readTimeout(4, TimeUnit.SECONDS)
-            .followRedirects(true)
-            .build()
-    }
+    private val imageClient: OkHttpClient
+        get() = com.example.util.StoreProNetworkClient.fastProbeClient
 
     fun ensureNotificationChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

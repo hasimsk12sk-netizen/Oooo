@@ -54,6 +54,8 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -77,6 +79,9 @@ import com.example.data.device.DeviceManager
 import com.example.data.download.DownloadController
 import com.example.data.liveupdate.LiveUpdateController
 import com.example.data.model.ApplicationItem
+import com.example.data.model.CatalogUiState
+import com.example.data.model.HistoryDownloadState
+import com.example.data.model.UpdateHistoryRecord
 import com.example.data.model.UserProfile
 import com.example.data.repository.DeviceAndUpdateRepository
 import com.example.data.repository.LiveUpdateRepository
@@ -87,12 +92,14 @@ import com.example.ui.admin.AdminAuthManager
 import com.example.ui.admin.AdminLoginScreen
 import com.example.ui.auth.AuthManager
 import com.example.ui.auth.AuthScreen
+import com.example.ui.components.ProvideSharedNeonGlowClock
 import com.example.ui.details.AppDetailsScreen
 import com.example.ui.device.AccessBlockedScreen
 import com.example.ui.edit.EditAppDialog
+import com.example.ui.home.AllAppsScreen
 import com.example.ui.home.HomeScreen
-import com.example.ui.liveupdate.AdminLiveUpdateScreen
-import com.example.ui.liveupdate.LiveUpdateDashboardScreen
+import com.example.ui.liveupdate.UpdateHistoryDetailScreen
+import com.example.ui.liveupdate.UpdateHistoryScreen
 import com.example.ui.profile.ProfileScreen
 import com.example.ui.search.SearchScreen
 import com.example.ui.theme.MyApplicationTheme
@@ -101,6 +108,10 @@ import com.example.ui.theme.StoreProCardBorder
 import com.example.ui.theme.StoreProPrimaryGreen
 import com.example.ui.theme.StoreProSecondaryCyan
 import com.example.ui.upload.UploadAppScreen
+import com.example.ui.upload.UploadStudioTab
+import com.example.util.DisplayRefreshRateOptimizer
+import com.example.util.StoreProDeepLinkParser
+import com.example.util.StoreProDeepLinkTarget
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
@@ -113,48 +124,64 @@ import java.io.File
 
 enum class StoreNavScreen {
     HOME,
+    ALL_APPS,
     SEARCH,
     DETAILS,
     ADMIN_LOGIN,
     UPLOAD,
     PROFILE,
     AUTH_PROMPT,
-    LIVE_UPDATE,
-    ADMIN_LIVE_UPDATE
+    UPDATE_HISTORY,
+    UPDATE_HISTORY_DETAIL
 }
 
 class MainActivity : ComponentActivity() {
-    private var pendingNotificationIntent by mutableStateOf<Intent?>(null)
+    private var pendingLaunchIntent by mutableStateOf<Intent?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         StoreProApplication.ensureFirebaseInitialized(this)
         StoreProNotificationHelper.ensureNotificationChannel(this)
-        pendingNotificationIntent = intent
+        pendingLaunchIntent = intent
         enableEdgeToEdge()
+        DisplayRefreshRateOptimizer.applyOptimalRefreshRate(this)
 
         setContent {
             MyApplicationTheme(darkTheme = true) {
-                val targetAppId = StoreProNotificationHelper.extractTargetAppId(pendingNotificationIntent)
-                AppRoot(
-                    pendingNotificationAppId = targetAppId,
-                    onClearPendingNotification = { pendingNotificationIntent = null }
-                )
+                ProvideSharedNeonGlowClock {
+                    val deepLinkTarget = StoreProDeepLinkParser.parse(pendingLaunchIntent)
+                    AppRoot(
+                        pendingDeepLinkTarget = deepLinkTarget,
+                        onClearPendingDeepLink = { pendingLaunchIntent = null }
+                    )
+                }
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        DisplayRefreshRateOptimizer.applyOptimalRefreshRate(this)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            DisplayRefreshRateOptimizer.applyOptimalRefreshRate(this)
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        pendingNotificationIntent = intent
+        pendingLaunchIntent = intent
     }
 }
 
 @Composable
 fun AppRoot(
-    pendingNotificationAppId: String? = null,
-    onClearPendingNotification: () -> Unit = {}
+    pendingDeepLinkTarget: StoreProDeepLinkTarget? = null,
+    onClearPendingDeepLink: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -181,8 +208,8 @@ fun AppRoot(
             currentUserId = currentUser?.uid,
             currentUser = currentUser,
             credentialManager = credentialManager,
-            pendingNotificationAppId = pendingNotificationAppId,
-            onClearPendingNotification = onClearPendingNotification,
+            pendingDeepLinkTarget = pendingDeepLinkTarget,
+            onClearPendingDeepLink = onClearPendingDeepLink,
             onSignOut = {
                 AdminAuthManager.logout(context)
                 AuthManager.signOut(
@@ -199,8 +226,8 @@ fun MainMarketplaceApp(
     currentUserId: String?,
     currentUser: FirebaseUser?,
     credentialManager: CredentialManager,
-    pendingNotificationAppId: String? = null,
-    onClearPendingNotification: () -> Unit = {},
+    pendingDeepLinkTarget: StoreProDeepLinkTarget? = null,
+    onClearPendingDeepLink: () -> Unit = {},
     onSignOut: () -> Unit
 ) {
     val context = LocalContext.current
@@ -216,14 +243,19 @@ fun MainMarketplaceApp(
 
     var currentScreen by remember { mutableStateOf(StoreNavScreen.HOME) }
     var previousScreen by remember { mutableStateOf(StoreNavScreen.HOME) }
+    var uploadInitialTab by remember { mutableStateOf(UploadStudioTab.PUBLISH_APP) }
+    var selectedHistoryRecord by remember { mutableStateOf<UpdateHistoryRecord?>(null) }
     var authPromptMessage by remember {
         mutableStateOf("Sign in with Google to save bookmarks, write reviews, and sync your library.")
     }
     var selectedApp by remember { mutableStateOf<ApplicationItem?>(null) }
     var editingApp by remember { mutableStateOf<ApplicationItem?>(null) }
     var userProfile by remember { mutableStateOf<UserProfile?>(null) }
-    var adminSessionVersion by remember { mutableStateOf(0) }
+    var adminSessionVersion by remember { mutableIntStateOf(0) }
     var isServerAdminVerified by remember(currentUserId, adminSessionVersion) { mutableStateOf(false) }
+    var isManualRefreshingDevices by remember { mutableStateOf(false) }
+    var lastDeviceSyncAtMs by remember { mutableLongStateOf(0L) }
+    var catalogRetryTrigger by remember { mutableIntStateOf(0) }
 
     var hasNotificationPermission by remember {
         mutableStateOf(PushNotificationCoordinator.hasOsNotificationPermission(context))
@@ -251,15 +283,17 @@ fun MainMarketplaceApp(
 
     // Realtime Observations from Firestore
     val applications by repository.observeApplications().collectAsStateWithLifecycle(initialValue = emptyList())
+    val catalogUiState by remember(repository, catalogRetryTrigger) {
+        repository.observePublishedCatalogState()
+    }.collectAsStateWithLifecycle(initialValue = CatalogUiState.Loading)
     val savedApps by repository.observeSavedApps(currentUserId).collectAsStateWithLifecycle(initialValue = emptyList())
     val downloads by repository.observeDownloads(currentUserId).collectAsStateWithLifecycle(initialValue = emptyList())
     val downloadProgress by downloadController.progressState.collectAsStateWithLifecycle()
     val deviceAuthState by deviceManager.authState.collectAsStateWithLifecycle()
     val isRefreshingDeviceStatus by deviceManager.isRefreshingStatus.collectAsStateWithLifecycle()
 
-    val livePublishedReleases by liveUpdateRepository.observePublishedReleases()
-        .collectAsStateWithLifecycle(initialValue = emptyList())
     val liveUpdateState by liveUpdateController.state.collectAsStateWithLifecycle()
+    val historyDownloads by liveUpdateController.historyDownloads.collectAsStateWithLifecycle()
 
     val adminAllLiveReleases by remember(canAccessAdminTools, liveUpdateRepository) {
         if (canAccessAdminTools) {
@@ -269,6 +303,17 @@ fun MainMarketplaceApp(
         }
     }.collectAsStateWithLifecycle(initialValue = emptyList())
 
+    val adminUpdateHistory by remember(canAccessAdminTools, liveUpdateRepository) {
+        if (canAccessAdminTools) {
+            liveUpdateRepository.observeUpdateHistoryForAdmin()
+        } else {
+            flowOf(emptyList())
+        }
+    }.collectAsStateWithLifecycle(initialValue = emptyList())
+
+    var manualFetchedDevices by remember(canAccessAdminTools) {
+        mutableStateOf<List<com.example.data.model.RegisteredDevice>?>(null)
+    }
     val liveRegisteredDevices by remember(canAccessAdminTools, deviceUpdateRepository) {
         if (canAccessAdminTools) {
             deviceUpdateRepository.observeAllRegisteredDevices()
@@ -276,6 +321,21 @@ fun MainMarketplaceApp(
             flowOf(emptyList())
         }
     }.collectAsStateWithLifecycle(initialValue = emptyList())
+
+    val mergedRegisteredDevices = remember(liveRegisteredDevices, manualFetchedDevices) {
+        val manual = manualFetchedDevices
+        when {
+            liveRegisteredDevices.isEmpty() && manual != null -> manual
+            manual == null -> liveRegisteredDevices
+            else -> DeviceAndUpdateRepository.deduplicateDevices(liveRegisteredDevices + manual)
+        }
+    }
+
+    LaunchedEffect(liveRegisteredDevices) {
+        if (canAccessAdminTools && liveRegisteredDevices.isNotEmpty()) {
+            lastDeviceSyncAtMs = System.currentTimeMillis()
+        }
+    }
 
     val selectedAppId = selectedApp?.appId
     val reviews by remember(repository, selectedAppId) {
@@ -298,13 +358,18 @@ fun MainMarketplaceApp(
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner, deviceManager, liveUpdateController) {
+    DisposableEffect(lifecycleOwner, deviceManager) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                deviceManager.checkNow(coroutineScope)
-                liveUpdateController.onHostResumed()
-                hasNotificationPermission = PushNotificationCoordinator.hasOsNotificationPermission(context)
-                PushNotificationCoordinator.syncCurrentFcmToken(context, deviceUpdateRepository, coroutineScope)
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    deviceManager.onForeground(coroutineScope)
+                    hasNotificationPermission = PushNotificationCoordinator.hasOsNotificationPermission(context)
+                    PushNotificationCoordinator.syncCurrentFcmToken(context, deviceUpdateRepository, coroutineScope)
+                }
+                Lifecycle.Event.ON_PAUSE -> {
+                    deviceManager.onBackground()
+                }
+                else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -313,30 +378,49 @@ fun MainMarketplaceApp(
         }
     }
 
-    // Keep Live Update button badge synced silently with published releases without interrupting startup
-    LaunchedEffect(livePublishedReleases) {
-        liveUpdateController.applyPublishedReleases(livePublishedReleases)
-    }
-
-    // Cleanup any legacy cached self-update APKs, check live updates quietly, & sync FCM token on startup
-    LaunchedEffect(deviceUpdateRepository, liveUpdateController) {
+    // Cleanup any legacy cached self-update APKs & sync FCM token on startup (no public update check)
+    LaunchedEffect(deviceUpdateRepository) {
         withContext(Dispatchers.IO) {
             runCatching { File(context.filesDir, "app_updates").deleteRecursively() }
         }
-        liveUpdateController.refreshUpdates()
         PushNotificationCoordinator.syncCurrentFcmToken(context, deviceUpdateRepository, coroutineScope)
     }
 
-    // Handle deep-link navigation from FCM notification click (foreground, background, or cold launch)
-    LaunchedEffect(pendingNotificationAppId, applications) {
-        val targetId = pendingNotificationAppId ?: return@LaunchedEffect
-        val matched = applications.firstOrNull { it.appId == targetId }
-            ?: deviceUpdateRepository.getApplicationById(targetId).getOrNull()
-        if (matched != null) {
-            selectedApp = matched
-            currentScreen = StoreNavScreen.DETAILS
+    // Handle deep-link navigation from App Links (https://.../app/<id>), storepro:// URIs, and FCM notifications
+    LaunchedEffect(pendingDeepLinkTarget, applications) {
+        val target = pendingDeepLinkTarget ?: return@LaunchedEffect
+        when (target) {
+            is StoreProDeepLinkTarget.InstallLanding -> {
+                currentScreen = StoreNavScreen.HOME
+                onClearPendingDeepLink()
+            }
+            is StoreProDeepLinkTarget.AppDetails -> {
+                val cachedMatch = StoreProDeepLinkParser.findMatchingApplication(applications, target.appIdOrSlug)
+                if (cachedMatch != null && (cachedMatch.status.equals("published", ignoreCase = true) || cachedMatch.status.isBlank())) {
+                    selectedApp = cachedMatch
+                    currentScreen = StoreNavScreen.DETAILS
+                    onClearPendingDeepLink()
+                    return@LaunchedEffect
+                }
+                val fetchedResult = repository.fetchPublishedApplicationById(target.appIdOrSlug)
+                fetchedResult.onSuccess { remoteApp ->
+                    if (remoteApp != null) {
+                        selectedApp = remoteApp
+                        currentScreen = StoreNavScreen.DETAILS
+                    } else {
+                        currentScreen = StoreNavScreen.HOME
+                        snackbarHostState.showSnackbar("Shared application could not be found on STORE PRO.")
+                    }
+                    onClearPendingDeepLink()
+                }.onFailure { err ->
+                    currentScreen = StoreNavScreen.HOME
+                    snackbarHostState.showSnackbar(
+                        err.localizedMessage ?: "Unable to open shared application link."
+                    )
+                    onClearPendingDeepLink()
+                }
+            }
         }
-        onClearPendingNotification()
     }
 
     // Sync signed-in user profile and verify server-side administrator privileges
@@ -368,6 +452,7 @@ fun MainMarketplaceApp(
                 }
                 if (isServerAdminVerified) {
                     deviceUpdateRepository.purgeFakeEmulatorRecordsIfAdmin()
+                    deviceUpdateRepository.reconcileDuplicateDevicesIfAdmin()
                 }
             } else {
                 isServerAdminVerified = deviceUpdateRepository.verifyServerAdminAuthorization()
@@ -404,6 +489,7 @@ fun MainMarketplaceApp(
     }
 
     val openAdminProtectedUpload: () -> Unit = {
+        uploadInitialTab = UploadStudioTab.PUBLISH_APP
         if (AdminAuthManager.isFullyAuthorizedAdmin(context, Firebase.auth.currentUser)) {
             currentScreen = StoreNavScreen.UPLOAD
         } else {
@@ -550,12 +636,48 @@ fun MainMarketplaceApp(
                             },
                             onOpenProfile = { currentScreen = StoreNavScreen.PROFILE },
                             liveUpdateState = liveUpdateState,
+                            canAccessAdminTools = canAccessAdminTools,
+                            catalogState = catalogUiState,
+                            downloadProgress = downloadProgress,
+                            onDownloadApp = { app ->
+                                downloadController.startDownload(app, coroutineScope, currentUserId)
+                            },
+                            onInstallApk = { file ->
+                                downloadController.installApk(file)
+                            },
+                            onOpenAllApps = { currentScreen = StoreNavScreen.ALL_APPS },
+                            onRetryCatalog = { catalogRetryTrigger++ },
                             onOpenLiveUpdate = {
-                                currentScreen = StoreNavScreen.LIVE_UPDATE
-                                coroutineScope.launch { liveUpdateController.refreshUpdates() }
+                                if (canAccessAdminTools) {
+                                    uploadInitialTab = UploadStudioTab.PUBLISH_UPDATE
+                                    currentScreen = StoreNavScreen.UPLOAD
+                                } else {
+                                    previousScreen = StoreNavScreen.HOME
+                                    uploadInitialTab = UploadStudioTab.PUBLISH_UPDATE
+                                    currentScreen = StoreNavScreen.ADMIN_LOGIN
+                                }
                             }
                         )
                     }
+
+                StoreNavScreen.ALL_APPS -> {
+                    AllAppsScreen(
+                        catalogState = catalogUiState,
+                        downloadProgress = downloadProgress,
+                        onSelectApp = { app ->
+                            selectedApp = app
+                            currentScreen = StoreNavScreen.DETAILS
+                        },
+                        onDownloadApp = { app ->
+                            downloadController.startDownload(app, coroutineScope, currentUserId)
+                        },
+                        onInstallApk = { file ->
+                            downloadController.installApk(file)
+                        },
+                        onRetry = { catalogRetryTrigger++ },
+                        onBack = { currentScreen = StoreNavScreen.HOME }
+                    )
+                }
 
                 StoreNavScreen.SEARCH -> {
                     SearchScreen(
@@ -672,6 +794,22 @@ fun MainMarketplaceApp(
                         currentUserId = currentUserId ?: "",
                         repository = repository,
                         deviceUpdateRepository = deviceUpdateRepository,
+                        liveUpdateRepository = liveUpdateRepository,
+                        initialTab = uploadInitialTab,
+                        adminAllLiveReleases = adminAllLiveReleases,
+                        onOpenUpdateHistory = {
+                            if (canAccessAdminTools) {
+                                currentScreen = StoreNavScreen.UPDATE_HISTORY
+                            } else {
+                                previousScreen = StoreNavScreen.UPLOAD
+                                currentScreen = StoreNavScreen.ADMIN_LOGIN
+                            }
+                        },
+                        onStatusMessage = { msg ->
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar(msg)
+                            }
+                        },
                         onBack = { currentScreen = StoreNavScreen.HOME },
                         onUploadSuccess = { appId: String ->
                             coroutineScope.launch {
@@ -712,7 +850,7 @@ fun MainMarketplaceApp(
                         isSignedIn = currentUserId != null,
                         isAdminAuthorized = isAdminAuthorized,
                         isServerAdminVerified = isServerAdminVerified,
-                        registeredDevices = liveRegisteredDevices,
+                        registeredDevices = mergedRegisteredDevices,
                         notificationsEnabled = hasNotificationPermission,
                         userProfile = userProfile,
                         myUploads = myUploads,
@@ -750,6 +888,19 @@ fun MainMarketplaceApp(
                                 val nextBlocked = !device.isBlocked
                                 val res = deviceUpdateRepository.setDeviceBlocked(device.installationId, nextBlocked)
                                 if (res.isSuccess) {
+                                    manualFetchedDevices = manualFetchedDevices?.map { item ->
+                                        if (item.installationId == device.installationId) {
+                                            item.copy(
+                                                status = if (nextBlocked) {
+                                                    com.example.data.model.RegisteredDevice.STATUS_BLOCKED
+                                                } else {
+                                                    com.example.data.model.RegisteredDevice.STATUS_ACTIVE
+                                                }
+                                            )
+                                        } else {
+                                            item
+                                        }
+                                    }
                                     snackbarHostState.showSnackbar(
                                         if (nextBlocked) "Blocked ${device.deviceName}" else "Restored access for ${device.deviceName}"
                                     )
@@ -762,9 +913,45 @@ fun MainMarketplaceApp(
                             coroutineScope.launch {
                                 val res = deviceUpdateRepository.deleteRegisteredDevice(installationId)
                                 if (res.isSuccess) {
+                                    manualFetchedDevices = manualFetchedDevices?.filterNot {
+                                        it.installationId == installationId
+                                    }
                                     snackbarHostState.showSnackbar("Device removed from registry")
                                 } else {
                                     snackbarHostState.showSnackbar("Failed to delete device record")
+                                }
+                            }
+                        },
+                        isRefreshingDevices = isManualRefreshingDevices,
+                        lastDeviceSyncAtMs = lastDeviceSyncAtMs,
+                        onRefreshDevices = {
+                            if (!isManualRefreshingDevices) {
+                                coroutineScope.launch {
+                                    isManualRefreshingDevices = true
+                                    deviceManager.checkNow(coroutineScope, force = true)
+                                    deviceUpdateRepository.reconcileDuplicateDevicesIfAdmin()
+                                    val res = deviceUpdateRepository.fetchAllRegisteredDevicesFromServer()
+                                    isManualRefreshingDevices = false
+                                    res.onSuccess { list ->
+                                        manualFetchedDevices = list
+                                        lastDeviceSyncAtMs = System.currentTimeMillis()
+                                        snackbarHostState.showSnackbar("Synced ${list.count { it.isGenuineDeviceRecord() }} registered device(s)")
+                                    }.onFailure { err ->
+                                        snackbarHostState.showSnackbar(err.localizedMessage ?: "Failed to refresh device registry")
+                                    }
+                                }
+                            }
+                        },
+                        onCleanupStaleDevices = {
+                            coroutineScope.launch {
+                                val res = deviceUpdateRepository.cleanupStaleDevices()
+                                res.onSuccess { deleted ->
+                                    snackbarHostState.showSnackbar(
+                                        if (deleted > 0) "Cleaned $deleted stale offline device(s)"
+                                        else "No stale offline devices found"
+                                    )
+                                }.onFailure { err ->
+                                    snackbarHostState.showSnackbar(err.localizedMessage ?: "Failed to clean stale devices")
                                 }
                             }
                         },
@@ -813,66 +1000,57 @@ fun MainMarketplaceApp(
                     )
                 }
 
-                StoreNavScreen.LIVE_UPDATE -> {
-                    LiveUpdateDashboardScreen(
-                        state = liveUpdateState,
-                        canAccessAdminTools = canAccessAdminTools,
-                        onBack = { currentScreen = StoreNavScreen.HOME },
-                        onRefresh = {
-                            coroutineScope.launch { liveUpdateController.refreshUpdates() }
+                StoreNavScreen.UPDATE_HISTORY -> {
+                    UpdateHistoryScreen(
+                        records = adminUpdateHistory,
+                        onSelectRecord = { record ->
+                            selectedHistoryRecord = record
+                            currentScreen = StoreNavScreen.UPDATE_HISTORY_DETAIL
                         },
-                        onStartDownload = {
-                            liveUpdateController.startDownload(coroutineScope)
+                        onBack = {
+                            uploadInitialTab = UploadStudioTab.PUBLISH_UPDATE
+                            currentScreen = StoreNavScreen.UPLOAD
                         },
-                        onCancelDownload = {
-                            liveUpdateController.cancelDownload()
-                        },
-                        onRetryDownload = {
-                            liveUpdateController.retryDownload(coroutineScope)
-                        },
-                        onInstallUpdate = {
-                            liveUpdateController.launchSystemInstaller()
-                                .onSuccess { startedInstaller ->
-                                    if (!startedInstaller) {
-                                        coroutineScope.launch {
-                                            snackbarHostState.showSnackbar("Enable \"Allow from this source\" for STORE PRO, then tap Install Update.")
-                                        }
-                                    }
-                                }
-                                .onFailure { err ->
-                                    coroutineScope.launch {
-                                        snackbarHostState.showSnackbar(err.localizedMessage ?: "Unable to launch package installer.")
-                                    }
-                                }
-                        },
-                        onOpenAdminManager = {
-                            if (canAccessAdminTools) {
-                                currentScreen = StoreNavScreen.ADMIN_LIVE_UPDATE
-                            } else {
-                                previousScreen = StoreNavScreen.LIVE_UPDATE
-                                currentScreen = StoreNavScreen.ADMIN_LOGIN
-                            }
+                        onUnauthorized = {
+                            adminSessionVersion++
+                            currentScreen = StoreNavScreen.HOME
                         }
                     )
                 }
 
-                StoreNavScreen.ADMIN_LIVE_UPDATE -> {
-                    AdminLiveUpdateScreen(
-                        allReleases = adminAllLiveReleases,
-                        liveUpdateRepository = liveUpdateRepository,
-                        deviceUpdateRepository = deviceUpdateRepository,
-                        onBack = { currentScreen = StoreNavScreen.LIVE_UPDATE },
-                        onUnauthorized = {
-                            adminSessionVersion++
-                            previousScreen = StoreNavScreen.LIVE_UPDATE
-                            currentScreen = StoreNavScreen.ADMIN_LOGIN
-                        },
-                        onStatusMessage = { msg ->
-                            coroutineScope.launch {
-                                snackbarHostState.showSnackbar(msg)
+                StoreNavScreen.UPDATE_HISTORY_DETAIL -> {
+                    val activeRecord = selectedHistoryRecord?.let { sel ->
+                        adminUpdateHistory.firstOrNull { it.historyId == sel.historyId } ?: sel
+                    }
+                    if (activeRecord != null) {
+                        UpdateHistoryDetailScreen(
+                            record = activeRecord,
+                            downloadState = historyDownloads[activeRecord.historyId]
+                                ?: HistoryDownloadState(historyId = activeRecord.historyId),
+                            liveUpdateRepository = liveUpdateRepository,
+                            onDownloadApk = { rec ->
+                                liveUpdateController.downloadHistoricalApk(rec, coroutineScope)
+                            },
+                            onCancelDownload = { id ->
+                                liveUpdateController.cancelHistoricalDownload(id)
+                            },
+                            onLaunchInstall = { rec ->
+                                liveUpdateController.launchHistoricalApkInstall(rec)
+                            },
+                            onBack = { currentScreen = StoreNavScreen.UPDATE_HISTORY },
+                            onUnauthorized = {
+                                adminSessionVersion++
+                                currentScreen = StoreNavScreen.HOME
+                            },
+                            onStatusMessage = { msg ->
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar(msg)
+                                }
                             }
-                        }
-                    )
+                        )
+                    } else {
+                        currentScreen = StoreNavScreen.UPDATE_HISTORY
+                    }
                 }
             }
             }

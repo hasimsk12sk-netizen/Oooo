@@ -18,6 +18,7 @@ import com.example.ui.admin.AdminAuthManager
 import com.google.firebase.FirebaseApp
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
@@ -140,7 +141,7 @@ class MainActivityStartupTest {
     }
 
     @Test
-    fun uploadAppScreen_showsMarketplacePublishDirectlyWithoutSelfUpdateTab() {
+    fun uploadAppScreen_showsRestoredTwoTabStudioWithPublishAppAndPublishUpdate() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val repo = StoreProRepository(context)
         composeRule.runOnUiThread {
@@ -159,9 +160,15 @@ class MainActivityStartupTest {
         }
         composeRule.waitForIdle()
         composeRule.onNodeWithText("Admin Upload Studio").assertIsDisplayed()
+        composeRule.onNodeWithTag("studio_tab_publish_app").assertIsDisplayed()
+        composeRule.onNodeWithTag("studio_tab_publish_update").assertIsDisplayed()
         composeRule.onNodeWithTag("input_app_name").assertIsDisplayed()
         composeRule.onNodeWithTag("submit_upload_button").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("studio_mode_publish_update").assertDoesNotExist()
-        composeRule.onNodeWithText("Publish Update", ignoreCase = true).assertDoesNotExist()
+
+        // Switching to Publish Update opens the rebuilt Admin-only Update form + History button
+        composeRule.onNodeWithTag("studio_tab_publish_update").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("admin_open_history_button").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("admin_live_version_code_input").performScrollTo().assertIsDisplayed()
     }
 }

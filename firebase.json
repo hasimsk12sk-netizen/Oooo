@@ -21,13 +21,49 @@
       ]
     }
   ],
-  "emulators": {
-    "firestore": {
-      "host": "127.0.0.1",
-      "port": 8085
+    "emulators": {
+      "firestore": {
+        "host": "127.0.0.1",
+        "port": 8085
+      },
+      "ui": {
+        "enabled": false
+      }
     },
-    "ui": {
-      "enabled": false
+    "hosting": {
+      "public": "public",
+      "ignore": [
+        "firebase.json",
+        "**/node_modules/**"
+      ],
+      "headers": [
+        {
+          "source": "/.well-known/assetlinks.json",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "Access-Control-Allow-Origin",
+              "value": "*"
+            }
+          ]
+        }
+      ],
+      "rewrites": [
+        {
+          "source": "/app/**",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/install",
+          "destination": "/index.html"
+        },
+        {
+          "source": "/install/**",
+          "destination": "/index.html"
+        }
+      ]
     }
   }
-}

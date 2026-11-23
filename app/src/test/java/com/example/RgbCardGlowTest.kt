@@ -177,8 +177,60 @@ class RgbCardGlowTest {
         }
         composeRule.waitForIdle()
 
+        // Unfocused search box keeps RGB glow inactive; focusing activates Cyan/Green/Blue/Purple glow
+        composeRule.onNodeWithTag("search_box_rgb_inactive").assertIsDisplayed()
+        composeRule.onNodeWithTag("search_box_rgb_active").assertDoesNotExist()
+
+        composeRule.onNodeWithTag("search_input_field").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("search_box_rgb_active").assertIsDisplayed()
+        composeRule.onNodeWithTag("search_box_rgb_inactive").assertDoesNotExist()
+
         composeRule.onNodeWithTag("app_row_app_vn").assertIsDisplayed()
         composeRule.onNodeWithTag("app_row_app_vlc").assertIsDisplayed()
+    }
+
+    @Test
+    fun searchBox_matchesExactWidthAndHeightBetweenHomeAndSearchScreen() {
+        val apps = sampleApps()
+        val showSearch = androidx.compose.runtime.mutableStateOf(false)
+
+        composeRule.setContent {
+            MyApplicationTheme(darkTheme = true) {
+                if (!showSearch.value) {
+                    HomeScreen(
+                        applications = apps,
+                        userProfile = null,
+                        onOpenSearch = { showSearch.value = true },
+                        onSelectApp = {},
+                        onOpenProfile = {}
+                    )
+                } else {
+                    SearchScreen(
+                        applications = apps,
+                        onSelectApp = {},
+                        onBack = { showSearch.value = false }
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+
+        val homeBounds = composeRule.onNodeWithTag("home_search_glow_inactive")
+            .fetchSemanticsNode()
+            .boundsInRoot
+
+        showSearch.value = true
+        composeRule.waitForIdle()
+
+        val searchBounds = composeRule.onNodeWithTag("search_box_rgb_inactive")
+            .fetchSemanticsNode()
+            .boundsInRoot
+
+        assertEquals(homeBounds.width, searchBounds.width, 1.5f)
+        assertEquals(homeBounds.height, searchBounds.height, 1.5f)
+        composeRule.onNodeWithText("Search apps, developers, keywords...", useUnmergedTree = true)
+            .assertIsDisplayed()
     }
 
     @Test

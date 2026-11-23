@@ -1,6 +1,9 @@
 package com.example.ui.home
 
 import android.content.Context
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.Shader
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -12,7 +15,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -42,7 +44,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.State
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -59,8 +61,12 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -68,17 +74,17 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.R
 import com.example.ui.components.RgbNeonPalette
+import com.example.ui.components.rememberLifecycleIsResumed
 import com.example.ui.components.rgbNeonGlowBorder
 import com.example.ui.theme.StoreProSecondaryCyan
+import com.example.util.DisplayRefreshRateOptimizer
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -166,10 +172,10 @@ private val TileSurfaceBrush = Brush.linearGradient(
     )
 )
 
-private val SweepColors = listOf(
-    Color(0xFF14B8A6).copy(alpha = 0.16f),
-    Color(0xFF8B5CF6).copy(alpha = 0.08f),
-    Color.Transparent
+private val SweepColorInts = intArrayOf(
+    Color(0xFF14B8A6).copy(alpha = 0.16f).toArgb(),
+    Color(0xFF8B5CF6).copy(alpha = 0.08f).toArgb(),
+    Color.Transparent.toArgb()
 )
 
 private val HorizonColors = listOf(
@@ -182,6 +188,7 @@ private val HorizonColors = listOf(
  * Purely decorative, non-interactive 3D promotional showcase banner.
  * Displays the fixed STORE PRO backdrop, HASIM APK header, glowing 3D HASIM title,
  * and 5 continuously orbiting 3D app icons with lifecycle-aware gyroscope parallax.
+ * Optimized to run all per-frame motion strictly in Layout & Draw phases (zero recompositions/sec).
  */
 @Composable
 fun FeaturedShowcaseBanner(
@@ -189,13 +196,16 @@ fun FeaturedShowcaseBanner(
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
+    val isResumed = rememberLifecycleIsResumed()
     val reducedMotion = remember(context) { RgbNeonPalette.isReducedMotionEnabled(context) }
+    val powerSave = remember(context, isResumed) { DisplayRefreshRateOptimizer.isPowerSaveMode(context) }
+    val animateShowcase = isResumed && !reducedMotion && !powerSave
 
-    val parallaxState = rememberShowcaseParallax(enabled = !reducedMotion)
+    val parallaxState = rememberShowcaseParallax(enabled = !reducedMotion && isResumed)
 
-    val orbitPhase: Float = if (!reducedMotion) {
+    val orbitPhaseState: State<Float> = if (animateShowcase) {
         val infiniteTransition = rememberInfiniteTransition(label = "hasim_3d_showcase")
-        val phase by infiniteTransition.animateFloat(
+        infiniteTransition.animateFloat(
             initialValue = 0f,
             targetValue = (2.0 * PI).toFloat(),
             animationSpec = infiniteRepeatable(
@@ -204,12 +214,11 @@ fun FeaturedShowcaseBanner(
             ),
             label = "orbit_phase"
         )
-        phase
     } else {
-        0.35f
+        remember { mutableFloatStateOf(0.35f) }
     }
 
-    val ambientShimmerState: State<Float> = if (!reducedMotion) {
+    val ambientShimmerState: State<Float> = if (animateShowcase) {
         val shimmerTransition = rememberInfiniteTransition(label = "hasim_shimmer")
         shimmerTransition.animateFloat(
             initialValue = 0f,
@@ -221,11 +230,8 @@ fun FeaturedShowcaseBanner(
             label = "shimmer_value"
         )
     } else {
-        remember { mutableStateOf(0.5f) }
+        remember { mutableFloatStateOf(0.5f) }
     }
-
-    val tiltX = parallaxState.value.first
-    val tiltY = parallaxState.value.second
 
     Box(
         modifier = modifier
@@ -317,34 +323,49 @@ fun FeaturedShowcaseBanner(
                             .background(BackdropScrimBrush)
                     )
 
-                    // Dynamic soft RGB light sweep + horizon stage ellipse inside card boundaries
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val sweepX = size.width * (0.2f + 0.6f * ambientShimmerState.value) +
-                            parallaxState.value.first * 24f
-                        val sweepCenter = Offset(sweepX, size.height * 0.55f)
-                        val sweepRadius = (size.width * 0.52f).coerceAtLeast(1f)
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                colors = SweepColors,
-                                center = sweepCenter,
-                                radius = sweepRadius
-                            ),
-                            radius = sweepRadius,
-                            center = sweepCenter
-                        )
+                    // Dynamic soft RGB light sweep + horizon stage ellipse inside card boundaries (cached shaders)
+                    Spacer(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .drawWithCache {
+                                val sweepRadius = (size.width * 0.52f).coerceAtLeast(1f)
+                                val sweepY = size.height * 0.55f
+                                val sweepShader = android.graphics.RadialGradient(
+                                    0f, 0f, sweepRadius,
+                                    SweepColorInts, null, Shader.TileMode.CLAMP
+                                )
+                                val sweepPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                                    shader = sweepShader
+                                }
+                                val sweepMatrix = Matrix()
 
-                        val horizonCenter = Offset(size.width / 2f, size.height * 0.86f)
-                        val horizonRadius = (size.width * 0.45f).coerceAtLeast(1f)
-                        drawOval(
-                            brush = Brush.radialGradient(
-                                colors = HorizonColors,
-                                center = horizonCenter,
-                                radius = horizonRadius
-                            ),
-                            topLeft = Offset(size.width * 0.08f, size.height * 0.72f),
-                            size = Size(size.width * 0.84f, size.height * 0.24f)
-                        )
-                    }
+                                val horizonCenter = Offset(size.width / 2f, size.height * 0.86f)
+                                val horizonRadius = (size.width * 0.45f).coerceAtLeast(1f)
+                                val horizonBrush = Brush.radialGradient(
+                                    colors = HorizonColors,
+                                    center = horizonCenter,
+                                    radius = horizonRadius
+                                )
+                                val horizonTopLeft = Offset(size.width * 0.08f, size.height * 0.72f)
+                                val horizonSize = Size(size.width * 0.84f, size.height * 0.24f)
+
+                                onDrawBehind {
+                                    val sweepX = size.width * (0.2f + 0.6f * ambientShimmerState.value) +
+                                        parallaxState.value.first * 24f
+                                    sweepMatrix.setTranslate(sweepX, sweepY)
+                                    sweepShader.setLocalMatrix(sweepMatrix)
+                                    sweepPaint.shader = sweepShader
+                                    drawIntoCanvas { canvas ->
+                                        canvas.nativeCanvas.drawCircle(sweepX, sweepY, sweepRadius, sweepPaint)
+                                    }
+                                    drawOval(
+                                        brush = horizonBrush,
+                                        topLeft = horizonTopLeft,
+                                        size = horizonSize
+                                    )
+                                }
+                            }
+                    )
                 }
 
                 // 2. Foreground Content Layer
@@ -390,10 +411,11 @@ fun FeaturedShowcaseBanner(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Large 3D Glowing "HASIM" Typography
+                    // Large 3D Glowing "HASIM" Typography (reads parallax strictly inside graphicsLayer)
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier.graphicsLayer {
+                            val (tiltX, tiltY) = parallaxState.value
                             cameraDistance = 12f * density.density
                             translationX = tiltX * 6.dp.toPx()
                             translationY = tiltY * 3.dp.toPx()
@@ -432,7 +454,7 @@ fun FeaturedShowcaseBanner(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Animated 3D Orbital Trending Apps Carousel (strictly clipped & non-interactive)
+                    // Animated 3D Orbital Trending Apps Carousel (strictly clipped & zero-recomposition motion)
                     BoxWithConstraints(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -442,51 +464,30 @@ fun FeaturedShowcaseBanner(
                     ) {
                         val containerW = constraints.maxWidth.toFloat()
                         val containerH = constraints.maxHeight.toFloat()
-                        val tileWidthPx = with(density) { 74.dp.toPx() }
-                        val tileHeightPx = with(density) { 86.dp.toPx() }
-                        val rx = ((containerW - tileWidthPx) * 0.44f).coerceAtLeast(24f)
-                        val ry = with(density) { 11.dp.toPx() }
-                        val floatAmpPx = with(density) { 4.5.dp.toPx() }
-                        val parallaxXPx = with(density) { 8.dp.toPx() }
-                        val parallaxYPx = with(density) { 5.dp.toPx() }
-                        val centerX = (containerW - tileWidthPx) / 2f
-                        val centerY = ((containerH - tileHeightPx) * 0.48f).coerceAtLeast(0f)
+                        val metrics = remember(containerW, containerH, density) {
+                            val tileWidthPx = with(density) { 74.dp.toPx() }
+                            val tileHeightPx = with(density) { 86.dp.toPx() }
+                            OrbitMetrics(
+                                rx = ((containerW - tileWidthPx) * 0.44f).coerceAtLeast(24f),
+                                ry = with(density) { 11.dp.toPx() },
+                                floatAmpPx = with(density) { 4.5.dp.toPx() },
+                                parallaxXPx = with(density) { 8.dp.toPx() },
+                                parallaxYPx = with(density) { 5.dp.toPx() },
+                                centerX = (containerW - tileWidthPx) / 2f,
+                                centerY = ((containerH - tileHeightPx) * 0.48f).coerceAtLeast(0f)
+                            )
+                        }
 
                         val count = Showcase3DTrendingApps.size
-                        val computedItems = Showcase3DTrendingApps.mapIndexed { index, app ->
-                            val angle = orbitPhase + (index.toFloat() / count.toFloat()) * (2f * PI.toFloat())
-                            val sinVal = sin(angle)
-                            val cosVal = cos(angle) // +1 front, -1 back
-                            val depthNorm = (cosVal + 1f) * 0.5f // 0..1
-                            val scale = 0.68f + 0.36f * depthNorm
-                            val floatOffset = if (reducedMotion) {
-                                0f
-                            } else {
-                                sin(orbitPhase * 2f + index * 1.25f) * floatAmpPx
-                            }
-                            val xPos = centerX + sinVal * rx + tiltX * parallaxXPx * (0.4f + depthNorm)
-                            val yPos = centerY + (1f - depthNorm) * ry * 1.4f - depthNorm * ry * 0.4f + floatOffset +
-                                tiltY * parallaxYPx * (0.4f + depthNorm)
-                            OrbitNodeState(
-                                app = app,
-                                xPx = xPos,
-                                yPx = yPos,
-                                scale = scale,
-                                rotationYDeg = -sinVal * 26f + tiltX * 6f,
-                                alpha = 0.48f + 0.52f * depthNorm,
-                                zOrder = depthNorm
-                            )
-                        }.sortedBy { it.zOrder }
-
-                        computedItems.forEach { node ->
+                        Showcase3DTrendingApps.forEachIndexed { index, app ->
                             Showcase3DOrbitTile(
-                                app = node.app,
-                                depthAlpha = node.alpha,
-                                scaleFactor = node.scale,
-                                rotationYDeg = node.rotationYDeg,
-                                xPx = node.xPx,
-                                yPx = node.yPx,
-                                zOrder = node.zOrder
+                                app = app,
+                                index = index,
+                                totalCount = count,
+                                orbitPhaseState = orbitPhaseState,
+                                parallaxState = parallaxState,
+                                metrics = metrics,
+                                reducedMotion = reducedMotion
                             )
                         }
                     }
@@ -496,27 +497,30 @@ fun FeaturedShowcaseBanner(
     }
 }
 
-private data class OrbitNodeState(
-    val app: Showcase3DApp,
-    val xPx: Float,
-    val yPx: Float,
-    val scale: Float,
-    val rotationYDeg: Float,
-    val alpha: Float,
-    val zOrder: Float
+private data class OrbitMetrics(
+    val rx: Float,
+    val ry: Float,
+    val floatAmpPx: Float,
+    val parallaxXPx: Float,
+    val parallaxYPx: Float,
+    val centerX: Float,
+    val centerY: Float
 )
 
 @Composable
 private fun Showcase3DOrbitTile(
     app: Showcase3DApp,
-    depthAlpha: Float,
-    scaleFactor: Float,
-    rotationYDeg: Float,
-    xPx: Float,
-    yPx: Float,
-    zOrder: Float
+    index: Int,
+    totalCount: Int,
+    orbitPhaseState: State<Float>,
+    parallaxState: State<Pair<Float, Float>>,
+    metrics: OrbitMetrics,
+    reducedMotion: Boolean
 ) {
     val density = LocalDensity.current
+    val baseAngle = remember(index, totalCount) {
+        (index.toFloat() / totalCount.toFloat()) * (2f * PI.toFloat())
+    }
     val rimBrush = remember(app.id) {
         Brush.linearGradient(
             colors = listOf(
@@ -541,15 +545,45 @@ private fun Showcase3DOrbitTile(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .offset { IntOffset(xPx.roundToInt(), yPx.roundToInt()) }
-            .zIndex(zOrder * 10f)
+            .layout { measurable, constraints ->
+                val placeable = measurable.measure(constraints)
+                val orbitPhase = orbitPhaseState.value
+                val (tiltX, tiltY) = parallaxState.value
+                val angle = orbitPhase + baseAngle
+                val sinVal = sin(angle)
+                val cosVal = cos(angle)
+                val depthNorm = (cosVal + 1f) * 0.5f
+                val floatOffset = if (reducedMotion) {
+                    0f
+                } else {
+                    sin(orbitPhase * 2f + index * 1.25f) * metrics.floatAmpPx
+                }
+                val xPos = metrics.centerX + sinVal * metrics.rx + tiltX * metrics.parallaxXPx * (0.4f + depthNorm)
+                val yPos = metrics.centerY + (1f - depthNorm) * metrics.ry * 1.4f - depthNorm * metrics.ry * 0.4f +
+                    floatOffset + tiltY * metrics.parallaxYPx * (0.4f + depthNorm)
+
+                layout(placeable.width, placeable.height) {
+                    placeable.placeRelative(
+                        x = xPos.roundToInt(),
+                        y = yPos.roundToInt(),
+                        zIndex = depthNorm * 10f
+                    )
+                }
+            }
             .width(74.dp)
             .graphicsLayer {
-                scaleX = scaleFactor
-                scaleY = scaleFactor
-                rotationY = rotationYDeg
+                val orbitPhase = orbitPhaseState.value
+                val (tiltX, _) = parallaxState.value
+                val angle = orbitPhase + baseAngle
+                val sinVal = sin(angle)
+                val cosVal = cos(angle)
+                val depthNorm = (cosVal + 1f) * 0.5f
+                val scale = 0.68f + 0.36f * depthNorm
+                scaleX = scale
+                scaleY = scale
+                rotationY = -sinVal * 26f + tiltX * 6f
                 cameraDistance = 12f * density.density
-                alpha = depthAlpha
+                alpha = 0.48f + 0.52f * depthNorm
             }
             .testTag("showcase_3d_item_${app.id}")
     ) {

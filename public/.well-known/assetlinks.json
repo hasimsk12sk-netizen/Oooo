@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.aistudio.storepro.vqxknp",
+      "sha256_cert_fingerprints": [
+        "95:7D:19:09:18:20:DA:C8:86:B1:C4:F6:03:7C:63:B5:C7:DC:4A:D8:28:A8:10:D4:15:A5:21:8C:C1:A9:0B:3B"
+      ]
+    }
+  }
+]

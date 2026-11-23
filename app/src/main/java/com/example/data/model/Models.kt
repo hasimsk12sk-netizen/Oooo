@@ -1,9 +1,11 @@
 package com.example.data.model
 
 import androidx.annotation.Keep
+import androidx.compose.runtime.Immutable
 import com.google.firebase.firestore.Exclude
 import com.google.firebase.firestore.IgnoreExtraProperties
 
+@Immutable
 @Keep
 @IgnoreExtraProperties
 data class UserProfile(
@@ -14,6 +16,7 @@ data class UserProfile(
     val avatarUrl: String? = null
 )
 
+@Immutable
 @Keep
 @IgnoreExtraProperties
 data class ApplicationItem(
@@ -45,6 +48,7 @@ data class ApplicationItem(
         }
 }
 
+@Immutable
 @Keep
 @IgnoreExtraProperties
 data class ReviewItem(
@@ -58,6 +62,7 @@ data class ReviewItem(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+@Immutable
 @Keep
 @IgnoreExtraProperties
 data class SavedAppItem(
@@ -69,6 +74,7 @@ data class SavedAppItem(
     val savedAt: Long = System.currentTimeMillis()
 )
 
+@Immutable
 @Keep
 @IgnoreExtraProperties
 data class DownloadItem(
@@ -83,6 +89,7 @@ data class DownloadItem(
     val downloadedAt: Long = System.currentTimeMillis()
 )
 
+@Immutable
 @Keep
 @IgnoreExtraProperties
 data class RegisteredDevice(
@@ -91,18 +98,32 @@ data class RegisteredDevice(
     val deviceModel: String = "",
     val manufacturer: String = "",
     val brand: String = "",
+    val modelCode: String = "",
+    val productName: String = "",
+    val cpuArch: String = "",
+    val ramInfo: String = "",
+    val totalRam: String = "",
+    val availableRam: String = "",
+    val screenResolution: String = "",
+    val screenDensity: String = "",
+    val connectionType: String = "",
     val androidVersion: String = "",
     val sdkVersion: Int = 0,
     val deviceType: String = "",
     val accountStatus: String = ACCOUNT_STATUS_GUEST,
     val associatedUserId: String? = null,
+    val associatedEmail: String? = null,
     val status: String = STATUS_ACTIVE,
     val isAdminDevice: Boolean = false,
     val appVersionCode: Long = 1L,
     val appVersionName: String = "1.0",
+    val installedAt: Long = 0L,
     val registeredAt: Long = System.currentTimeMillis(),
     val firstUsedAt: Long = 0L,
-    val lastActiveAt: Long = System.currentTimeMillis()
+    val lastActiveAt: Long = System.currentTimeMillis(),
+    val lastSyncAt: Long = 0L,
+    val deviceFingerprint: String = "",
+    val legacyInstallationId: String? = null
 ) {
     @get:Exclude
     val isBlocked: Boolean
@@ -121,14 +142,45 @@ data class RegisteredDevice(
             else -> 0L
         }
 
+    @get:Exclude
+    val effectiveInstalledAt: Long
+        get() = when {
+            installedAt > 0L -> installedAt
+            firstUsedAt > 0L -> firstUsedAt
+            registeredAt > 0L -> registeredAt
+            else -> 0L
+        }
+
+    @get:Exclude
+    val resolvedTotalRam: String
+        get() = totalRam.trim()
+            .takeIf { it.isNotBlank() && !it.equals(NOT_AVAILABLE, ignoreCase = true) }
+            ?: ramInfo.trim()
+                .takeIf { it.isNotBlank() && !it.equals(NOT_AVAILABLE, ignoreCase = true) }
+            ?: NOT_AVAILABLE
+
+    @get:Exclude
+    val resolvedAvailableRam: String
+        get() = availableRam.trim()
+            .takeIf { it.isNotBlank() && !it.equals(NOT_AVAILABLE, ignoreCase = true) }
+            ?: NOT_AVAILABLE
+
     @Exclude
     fun isCurrentlyActive(nowMs: Long = System.currentTimeMillis()): Boolean {
-        return !isBlocked && (nowMs - lastActiveAt) in 0L..ACTIVE_HEARTBEAT_WINDOW_MS
+        return !isBlocked && lastActiveAt > 0L && (nowMs - lastActiveAt) in 0L..ACTIVE_HEARTBEAT_WINDOW_MS
     }
 
     @Exclude
     fun isOffline(nowMs: Long = System.currentTimeMillis()): Boolean {
         return !isCurrentlyActive(nowMs)
+    }
+
+    @Exclude
+    fun isStaleOffline(
+        nowMs: Long = System.currentTimeMillis(),
+        staleThresholdMs: Long = DEFAULT_STALE_OFFLINE_WINDOW_MS
+    ): Boolean {
+        return !isAdminDevice && lastActiveAt > 0L && (nowMs - lastActiveAt) > staleThresholdMs
     }
 
     @Exclude
@@ -182,7 +234,8 @@ data class RegisteredDevice(
         const val ACCOUNT_STATUS_GUEST = "GUEST"
         const val ACCOUNT_STATUS_LOGGED_IN = "LOGGED_IN"
         const val NOT_AVAILABLE = "Not Available"
-        const val ACTIVE_HEARTBEAT_WINDOW_MS = 3L * 60L * 1000L
+        const val ACTIVE_HEARTBEAT_WINDOW_MS = 2L * 60L * 1000L
+        const val DEFAULT_STALE_OFFLINE_WINDOW_MS = 30L * 86_400_000L
         private const val MILLIS_PER_DAY = 86_400_000L
 
         internal val FAKE_AND_EMULATOR_TOKENS = listOf(
@@ -210,4 +263,44 @@ data class RegisteredDevice(
         )
     }
 }
+
+enum class AppCategory(val label: String) {
+    ALL("All"),
+    MEDIA("Media & Video"),
+    SOCIAL("Social & Chat"),
+    TOOLS("Tools & Utility"),
+    ENTERTAINMENT("Entertainment"),
+    PRODUCTIVITY("Productivity")
+}
+
+enum class AppSortOption(val label: String) {
+    LATEST("Latest"),
+    POPULARITY("Popularity"),
+    DOWNLOADS("Most Downloaded")
+}
+
+sealed interface CatalogUiState {
+    data object Loading : CatalogUiState
+    data class Success(val applications: List<ApplicationItem>) : CatalogUiState
+    data class Error(
+        val message: String,
+        val cachedApplications: List<ApplicationItem> = emptyList()
+    ) : CatalogUiState
+}
+
+fun ApplicationItem.resolveCategory(): AppCategory {
+    val haystack = "${appName} ${packageId} ${description} ${whatsNew}".lowercase()
+    return when {
+        listOf("video", "player", "audio", "music", "vlc", "kodi", "stream", "editor", "photo", "camera", "media")
+            .any { haystack.contains(it) } -> AppCategory.MEDIA
+        listOf("chat", "messenger", "signal", "whatsapp", "telegram", "social", "call", "instagram", "facebook")
+            .any { haystack.contains(it) } -> AppCategory.SOCIAL
+        listOf("tool", "utility", "launcher", "cleaner", "manager", "vpn", "browser", "scanner", "file", "apk")
+            .any { haystack.contains(it) } -> AppCategory.TOOLS
+        listOf("game", "play", "tv", "movie", "cinema", "show", "anime", "fun", "entertainment")
+            .any { haystack.contains(it) } -> AppCategory.ENTERTAINMENT
+        else -> AppCategory.PRODUCTIVITY
+    }
+}
+
 

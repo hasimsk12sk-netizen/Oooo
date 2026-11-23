@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>STORE PRO — Application Hub</title>
+  <meta name="description" content="Discover premium applications in one place on STORE PRO." />
+  <style>
+    :root {
+      --bg: #0a0f1d;
+      --card: #131b2e;
+      --surface: #0f172a;
+      --green: #00e676;
+      --cyan: #00e5ff;
+      --purple: #8b5cf6;
+      --pink: #ec4899;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      background: radial-gradient(circle at top right, rgba(0, 229, 255, 0.12), transparent 45%),
+                  radial-gradient(circle at bottom left, rgba(0, 230, 118, 0.12), transparent 45%),
+                  var(--bg);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .rgb-frame {
+      width: 100%;
+      max-width: 480px;
+      padding: 2px;
+      border-radius: 24px;
+      background: linear-gradient(125deg, var(--green), var(--cyan), #2979ff, var(--purple), var(--pink), var(--green));
+      background-size: 300% 300%;
+      animation: rgbGlow 6s linear infinite;
+      box-shadow: 0 0 28px rgba(0, 229, 255, 0.2);
+    }
+    @keyframes rgbGlow {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    .card {
+      background: var(--card);
+      border-radius: 22px;
+      padding: 26px 22px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .brand-mark {
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(0, 230, 118, 0.2), rgba(0, 229, 255, 0.2));
+      border: 1.5px solid rgba(0, 230, 118, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 18px;
+      color: var(--green);
+      letter-spacing: 0.5px;
+    }
+    .brand-title {
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: 1px;
+    }
+    .brand-sub {
+      font-size: 12px;
+      color: var(--cyan);
+      font-weight: 600;
+    }
+    .shared-app {
+      background: var(--surface);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-radius: 18px;
+      padding: 16px;
+      margin-bottom: 18px;
+    }
+    .app-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .app-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 16px;
+      background: #1e293b;
+      object-fit: cover;
+      flex-shrink: 0;
+      border: 1px solid rgba(0, 229, 255, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 22px;
+      color: var(--green);
+    }
+    .app-name {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 800;
+    }
+    .app-dev {
+      margin: 3px 0 6px;
+      font-size: 13px;
+      color: var(--cyan);
+      font-weight: 600;
+    }
+    .meta {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .desc {
+      margin: 12px 0 0;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #cbd5e1;
+    }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 14px 16px;
+      border-radius: 14px;
+      text-align: center;
+      text-decoration: none;
+      font-weight: 800;
+      font-size: 14px;
+      letter-spacing: 0.4px;
+      margin-top: 10px;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: linear-gradient(90deg, var(--green), var(--cyan));
+      color: #002914;
+    }
+    .btn-secondary {
+      background: #1e293b;
+      color: var(--cyan);
+      border: 1px solid rgba(0, 229, 255, 0.45);
+    }
+    .note {
+      margin-top: 14px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--muted);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="rgb-frame">
+    <div class="card">
+      <div class="brand">
+        <div class="brand-mark">SP</div>
+        <div>
+          <div class="brand-title">STORE PRO</div>
+          <div class="brand-sub">Discover premium applications in one place.</div>
+        </div>
+      </div>
+
+      <div id="shared-app-box" class="shared-app" style="display: none;">
+        <div class="app-row">
+          <img id="app-icon-img" class="app-icon" alt="App Icon" style="display: none;" />
+          <div id="app-icon-fallback" class="app-icon">SP</div>
+          <div>
+            <h1 id="app-name" class="app-name">Loading application...</h1>
+            <div id="app-dev" class="app-dev"></div>
+            <div id="app-meta" class="meta"></div>
+          </div>
+        </div>
+        <p id="app-desc" class="desc"></p>
+      </div>
+
+      <a id="open-in-app-btn" class="btn btn-secondary" href="storepro://install">
+        OPEN IN STORE PRO
+      </a>
+
+      <a id="install-storepro-btn" class="btn btn-primary" href="https://t.me/hasimapk" target="_blank" rel="noopener noreferrer">
+        INSTALL STORE PRO
+      </a>
+
+      <p id="landing-note" class="note">
+        If STORE PRO is already installed on your Android device, tap <strong>OPEN IN STORE PRO</strong> to launch straight into the shared screen.
+      </p>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const PROJECT_ID = "gen-lang-client-0338531403";
+      const DATABASE_ID = "ai-studio-android-storepro-deb69b25-7996-4b04-92a9-80ae1a6a1384";
+      const BASE_API = "https://firestore.googleapis.com/v1/projects/" + PROJECT_ID + "/databases/" + DATABASE_ID + "/documents/applications";
+
+      // Optional: administrator can configure direct public STORE PRO APK / Play Store URL here when hosted
+      const CONFIGURED_STOREPRO_DOWNLOAD_URL = "";
+
+      const pathParts = window.location.pathname.split("/").filter(Boolean);
+      const queryAppId = new URLSearchParams(window.location.search).get("appId");
+      let appIdentifier = "";
+      if (pathParts.length >= 2 && pathParts[0].toLowerCase() === "app") {
+        appIdentifier = decodeURIComponent(pathParts[1]);
+      } else if (queryAppId) {
+        appIdentifier = queryAppId.trim();
+      }
+
+      const openBtn = document.getElementById("open-in-app-btn");
+      const installBtn = document.getElementById("install-storepro-btn");
+      const noteEl = document.getElementById("landing-note");
+
+      if (CONFIGURED_STOREPRO_DOWNLOAD_URL) {
+        installBtn.href = CONFIGURED_STOREPRO_DOWNLOAD_URL;
+      } else {
+        installBtn.href = "https://t.me/hasimapk";
+        noteEl.textContent = "STORE PRO APK not attached directly here yet — tap INSTALL STORE PRO to get the official release from our Telegram channel, or tap OPEN IN STORE PRO if already installed.";
+      }
+
+      if (!appIdentifier) {
+        openBtn.href = "storepro://install";
+        return;
+      }
+
+      openBtn.href = "storepro://app/" + encodeURIComponent(appIdentifier);
+
+      const box = document.getElementById("shared-app-box");
+      const nameEl = document.getElementById("app-name");
+      const devEl = document.getElementById("app-dev");
+      const metaEl = document.getElementById("app-meta");
+      const descEl = document.getElementById("app-desc");
+      const iconImg = document.getElementById("app-icon-img");
+      const iconFallback = document.getElementById("app-icon-fallback");
+      box.style.display = "block";
+
+      function readField(fields, key) {
+        const entry = fields && fields[key];
+        if (!entry) return "";
+        return entry.stringValue || entry.integerValue || (entry.doubleValue != null ? String(entry.doubleValue) : "") || "";
+      }
+
+      function renderDoc(fields) {
+        const name = readField(fields, "appName") || "Shared Application";
+        const dev = readField(fields, "developerName") || "STORE PRO Publisher";
+        const ver = readField(fields, "version") || "1.0";
+        const status = (readField(fields, "status") || "published").toLowerCase();
+        const desc = readField(fields, "description");
+        const iconUrl = readField(fields, "iconUrl");
+
+        if (status && status !== "published") {
+          nameEl.textContent = "Application Unavailable";
+          devEl.textContent = "STORE PRO";
+          metaEl.textContent = "This application is not currently published.";
+          return;
+        }
+
+        document.title = name + " — STORE PRO";
+        nameEl.textContent = name;
+        devEl.textContent = dev;
+        metaEl.textContent = "Version " + ver;
+        descEl.textContent = desc;
+
+        if (iconUrl && (iconUrl.startsWith("https://") || iconUrl.startsWith("http://"))) {
+          iconImg.src = iconUrl;
+          iconImg.style.display = "block";
+          iconFallback.style.display = "none";
+        } else {
+          iconFallback.textContent = name.slice(0, 2).toUpperCase();
+        }
+      }
+
+      fetch(BASE_API + "/" + encodeURIComponent(appIdentifier))
+        .then(function (resp) {
+          if (!resp.ok) throw new Error("Not found");
+          return resp.json();
+        })
+        .then(function (doc) {
+          if (doc && doc.fields) {
+            renderDoc(doc.fields);
+          } else {
+            nameEl.textContent = "Application Not Found";
+            devEl.textContent = "STORE PRO";
+          }
+        })
+        .catch(function () {
+          nameEl.textContent = appIdentifier;
+          devEl.textContent = "STORE PRO Shared Link";
+          metaEl.textContent = "Open inside the STORE PRO app to view full details & download.";
+        });
+    })();
+  </script>
+</body>
+</html>

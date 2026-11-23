@@ -1,9 +1,14 @@
 package com.example.ui.details
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,10 +62,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -68,18 +75,23 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import coil.size.Precision
 import com.example.data.download.DownloadProgressState
 import com.example.data.download.DownloadStatus
 import com.example.data.download.FileSharingLinkResolver
 import com.example.data.model.ApplicationItem
 import com.example.data.model.ReviewItem
+import com.example.ui.components.rgbNeonGlowBorder
 import com.example.ui.theme.StoreProCardBorder
 import com.example.ui.theme.StoreProPrimaryGreen
 import com.example.ui.theme.StoreProSecondaryCyan
 import com.example.ui.theme.StoreProStar
 import com.example.ui.upload.UniversalImageLoader
 import com.example.ui.upload.UniversalImageUtils
+import com.example.util.StoreProShareHelper
 import java.io.File
+import java.util.Locale
+import kotlin.math.roundToInt
 
 @Composable
 fun AppDetailsScreen(
@@ -98,20 +110,45 @@ fun AppDetailsScreen(
     onOpenBrowserDownload: () -> Unit,
     onSubmitReview: (rating: Long, comment: String, existingId: String?) -> Unit,
     onDeleteReview: (reviewId: String) -> Unit,
+    onShareClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     BackHandler { onBack() }
 
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val imageLoader = remember(context) { UniversalImageLoader.get(context) }
     var showReviewDialog by remember { mutableStateOf(false) }
     var editingReview by remember { mutableStateOf<ReviewItem?>(null) }
     var previewScreenshotUrl by remember { mutableStateOf<String?>(null) }
 
-    val normalizedIconUrl = UniversalImageUtils.normalizeImageUrl(app.iconUrl)
-    val userOwnReview = if (currentUserId != null) {
-        reviews.firstOrNull { it.userId == currentUserId }
-    } else {
-        null
+    val normalizedIconUrl = remember(app.iconUrl) {
+        UniversalImageUtils.normalizeImageUrl(app.iconUrl)
+    }
+    val hasValidIcon = remember(normalizedIconUrl) {
+        UniversalImageUtils.isValidImageUrl(normalizedIconUrl)
+    }
+    val iconSizePx = remember(density) { with(density) { 88.dp.roundToPx() } }
+    val heroIconRequest = remember(context, normalizedIconUrl, iconSizePx) {
+        ImageRequest.Builder(context)
+            .data(normalizedIconUrl)
+            .size(iconSizePx, iconSizePx)
+            .precision(Precision.INEXACT)
+            .crossfade(150)
+            .build()
+    }
+    val formattedRating = remember(app.averageRating) {
+        if (app.averageRating > 0) String.format(Locale.US, "%.1f", app.averageRating) else "4.8"
+    }
+    val hostingSource = remember(app.apkUrl) {
+        FileSharingLinkResolver.identifyService(app.apkUrl)
+    }
+    val userOwnReview = remember(reviews, currentUserId) {
+        if (currentUserId != null) {
+            reviews.firstOrNull { it.userId == currentUserId }
+        } else {
+            null
+        }
     }
     val isCurrentAppDownloading = downloadProgress.currentAppId == app.appId &&
         (downloadProgress.status == DownloadStatus.CONNECTING || downloadProgress.status == DownloadStatus.DOWNLOADING)
@@ -126,7 +163,14 @@ fun AppDetailsScreen(
         contentPadding = PaddingValues(bottom = 60.dp)
     ) {
         // App Bar
-        item {
+        item(key = "details_app_bar", contentType = "details_app_bar") {
+            val shareInteractionSource = remember { MutableInteractionSource() }
+            val isSharePressed by shareInteractionSource.collectIsPressedAsState()
+            val shareScale by animateFloatAsState(
+                targetValue = if (isSharePressed) 0.90f else 1f,
+                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                label = "details_share_scale"
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -134,7 +178,7 @@ fun AppDetailsScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                IconButton(onClick = onBack, modifier = Modifier.testTag("details_back_button")) {
+                IconButton(onClick = onBack, modifier = Modifier.size(48.dp).testTag("details_back_button")) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
@@ -142,27 +186,71 @@ fun AppDetailsScreen(
                     )
                 }
 
-                IconButton(
-                    onClick = {
-                        if (currentUserId == null) {
-                            onRequireSignIn("Sign in with Google to bookmark applications in your library.")
-                        } else {
-                            onToggleSave()
-                        }
-                    },
-                    modifier = Modifier.testTag("details_save_button")
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(end = 6.dp)
                 ) {
-                    Icon(
-                        imageVector = if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                        contentDescription = "Bookmark",
-                        tint = if (isSaved) StoreProPrimaryGreen else Color.White
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .scale(shareScale)
+                            .rgbNeonGlowBorder(
+                                seed = "details_share_${app.appId}",
+                                cornerRadius = 14.dp,
+                                borderWidth = 1.4.dp,
+                                glowIntensity = 0.92f
+                            )
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color(0xFF131B2E))
+                                .clickable(
+                                    interactionSource = shareInteractionSource,
+                                    indication = androidx.compose.material3.ripple(color = StoreProSecondaryCyan)
+                                ) {
+                                    if (onShareClick != null) {
+                                        onShareClick()
+                                    } else {
+                                        StoreProShareHelper.shareApplication(context, app)
+                                    }
+                                }
+                                .testTag("details_share_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Share ${app.appName}",
+                                tint = StoreProSecondaryCyan,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = {
+                            if (currentUserId == null) {
+                                onRequireSignIn("Sign in with Google to bookmark applications in your library.")
+                            } else {
+                                onToggleSave()
+                            }
+                        },
+                        modifier = Modifier.size(48.dp).testTag("details_save_button")
+                    ) {
+                        Icon(
+                            imageVector = if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                            contentDescription = "Bookmark",
+                            tint = if (isSaved) StoreProPrimaryGreen else Color.White
+                        )
+                    }
                 }
             }
         }
 
         // Hero Info (Icon, Title, Studio, Verified Clean)
-        item {
+        item(key = "details_hero_info", contentType = "details_hero_info") {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -177,13 +265,10 @@ fun AppDetailsScreen(
                         .border(1.dp, StoreProCardBorder, RoundedCornerShape(22.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (UniversalImageUtils.isValidImageUrl(normalizedIconUrl)) {
+                    if (hasValidIcon) {
                         AsyncImage(
-                            model = ImageRequest.Builder(context)
-                                .data(normalizedIconUrl)
-                                .crossfade(true)
-                                .build(),
-                            imageLoader = UniversalImageLoader.get(context),
+                            model = heroIconRequest,
+                            imageLoader = imageLoader,
                             contentDescription = app.appName,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
@@ -238,17 +323,23 @@ fun AppDetailsScreen(
         }
 
         // Key stats bar (Rating, Downloads, Size, Version)
-        item {
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF131B2E)),
-                border = CardDefaults.outlinedCardBorder().copy(
-                    brush = Brush.horizontalGradient(listOf(StoreProCardBorder, Color(0xFF1E293B)))
-                ),
+        item(key = "details_stats_bar", contentType = "details_stats_bar") {
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .rgbNeonGlowBorder(
+                        seed = "details_stats_${app.appId}",
+                        cornerRadius = 16.dp,
+                        borderWidth = 1.5.dp,
+                        glowIntensity = 0.85f
+                    )
             ) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF131B2E)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -259,7 +350,7 @@ fun AppDetailsScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = if (app.averageRating > 0) "%.1f".format(app.averageRating) else "4.8",
+                                text = formattedRating,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
@@ -330,9 +421,10 @@ fun AppDetailsScreen(
                 }
             }
         }
+    }
 
         // Action Buttons: Download in Browser / In-App Stream / Install (Open to all users)
-        item {
+        item(key = "details_download_actions", contentType = "details_download_actions") {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -413,54 +505,76 @@ fun AppDetailsScreen(
                         }
                     }
                 } else if (isCurrentAppCompleted) {
-                    Button(
-                        onClick = { downloadProgress.downloadedFile?.let(onInstallApk) },
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = StoreProSecondaryCyan,
-                            contentColor = Color(0xFF00363D)
-                        ),
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(52.dp)
-                            .testTag("install_apk_button")
+                            .rgbNeonGlowBorder(
+                                seed = "install_btn_${app.appId}",
+                                cornerRadius = 16.dp,
+                                borderWidth = 1.6.dp,
+                                glowIntensity = 0.92f
+                            )
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.InstallMobile,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Install APK",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Button(
+                            onClick = { downloadProgress.downloadedFile?.let(onInstallApk) },
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = StoreProSecondaryCyan,
+                                contentColor = Color(0xFF00363D)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp)
+                                .testTag("install_apk_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.InstallMobile,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Install APK",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 } else {
-                    Button(
-                        onClick = onOpenBrowserDownload,
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = StoreProPrimaryGreen,
-                            contentColor = Color(0xFF003816)
-                        ),
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(54.dp)
-                            .testTag("download_apk_button")
+                            .rgbNeonGlowBorder(
+                                seed = "download_btn_${app.appId}",
+                                cornerRadius = 16.dp,
+                                borderWidth = 1.6.dp,
+                                glowIntensity = 0.95f
+                            )
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = null,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "DOWNLOAD (${app.formattedSize})",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
+                        Button(
+                            onClick = onOpenBrowserDownload,
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = StoreProPrimaryGreen,
+                                contentColor = Color(0xFF003816)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(54.dp)
+                                .testTag("download_apk_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "DOWNLOAD (${app.formattedSize})",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -490,7 +604,6 @@ fun AppDetailsScreen(
                         )
                     }
 
-                    val hostingSource = FileSharingLinkResolver.identifyService(app.apkUrl)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -517,7 +630,9 @@ fun AppDetailsScreen(
 
         // Screenshots Gallery
         if (app.screenshots.isNotEmpty()) {
-            item {
+            item(key = "details_screenshots", contentType = "details_screenshots") {
+                val thumbWidthPx = remember(density) { with(density) { 180.dp.roundToPx() } }
+                val thumbHeightPx = remember(density) { with(density) { 280.dp.roundToPx() } }
                 Spacer(modifier = Modifier.height(14.dp))
                 Text(
                     text = "Screenshots",
@@ -531,8 +646,20 @@ fun AppDetailsScreen(
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(app.screenshots) { rawUrl ->
-                        val normalized = UniversalImageUtils.normalizeImageUrl(rawUrl)
+                    items(
+                        items = app.screenshots,
+                        key = { it },
+                        contentType = { "screenshot_thumb" }
+                    ) { rawUrl ->
+                        val normalized = remember(rawUrl) { UniversalImageUtils.normalizeImageUrl(rawUrl) }
+                        val thumbRequest = remember(context, normalized, thumbWidthPx, thumbHeightPx) {
+                            ImageRequest.Builder(context)
+                                .data(normalized)
+                                .size(thumbWidthPx, thumbHeightPx)
+                                .precision(Precision.INEXACT)
+                                .crossfade(150)
+                                .build()
+                        }
                         Box(
                             modifier = Modifier
                                 .width(180.dp)
@@ -543,11 +670,8 @@ fun AppDetailsScreen(
                                 .clickable { previewScreenshotUrl = normalized }
                         ) {
                             AsyncImage(
-                                model = ImageRequest.Builder(context)
-                                    .data(normalized)
-                                    .crossfade(true)
-                                    .build(),
-                                imageLoader = UniversalImageLoader.get(context),
+                                model = thumbRequest,
+                                imageLoader = imageLoader,
                                 contentDescription = "Screenshot",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
@@ -559,7 +683,7 @@ fun AppDetailsScreen(
         }
 
         // About this app
-        item {
+        item(key = "details_about", contentType = "details_about") {
             Spacer(modifier = Modifier.height(16.dp))
             Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                 Text(
@@ -580,36 +704,46 @@ fun AppDetailsScreen(
 
         // What's New
         if (app.whatsNew.isNotBlank()) {
-            item {
+            item(key = "details_whats_new", contentType = "details_whats_new") {
                 Spacer(modifier = Modifier.height(16.dp))
-                Card(
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF131B2E)),
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
+                        .rgbNeonGlowBorder(
+                            seed = "details_whats_new_${app.appId}",
+                            cornerRadius = 16.dp,
+                            borderWidth = 1.4.dp,
+                            glowIntensity = 0.80f
+                        )
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Text(
-                            text = "What's New in v${app.version}",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = StoreProPrimaryGreen
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = app.whatsNew,
-                            fontSize = 13.sp,
-                            color = Color(0xFFCBD5E1),
-                            lineHeight = 18.sp
-                        )
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF131B2E)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text(
+                                text = "What's New in v${app.version}",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = StoreProPrimaryGreen
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = app.whatsNew,
+                                fontSize = 13.sp,
+                                color = Color(0xFFCBD5E1),
+                                lineHeight = 18.sp
+                            )
+                        }
                     }
                 }
             }
         }
 
         // Reviews & Ratings Section Header
-        item {
+        item(key = "details_reviews_header", contentType = "details_reviews_header") {
             Spacer(modifier = Modifier.height(20.dp))
             Row(
                 modifier = Modifier
@@ -655,7 +789,7 @@ fun AppDetailsScreen(
 
         // Reviews List
         if (reviews.isEmpty()) {
-            item {
+            item(key = "details_no_reviews", contentType = "details_no_reviews") {
                 Text(
                     text = "No reviews yet. Be the first to rate this app!",
                     fontSize = 13.sp,
@@ -664,82 +798,93 @@ fun AppDetailsScreen(
                 )
             }
         } else {
-            items(reviews) { review ->
-                Card(
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF131B2E)),
-                    border = CardDefaults.outlinedCardBorder().copy(
-                        brush = androidx.compose.ui.graphics.SolidColor(StoreProCardBorder)
-                    ),
+            items(
+                items = reviews,
+                key = { it.reviewId.ifBlank { "${it.userId}_${it.timestamp}" } },
+                contentType = { "review_card" }
+            ) { review ->
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .rgbNeonGlowBorder(
+                            seed = "review_${review.reviewId.ifBlank { review.userId }}",
+                            cornerRadius = 14.dp,
+                            borderWidth = 1.3.dp,
+                            glowIntensity = 0.72f
+                        )
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFF1E293B)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = review.userName.take(1).uppercase(),
-                                        fontWeight = FontWeight.Bold,
-                                        color = StoreProSecondaryCyan,
-                                        fontSize = 13.sp
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Text(
-                                        text = review.userName,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White,
-                                        fontSize = 13.sp
-                                    )
-                                    Row {
-                                        repeat(5) { i ->
-                                            Icon(
-                                                imageVector = if (i < review.rating) Icons.Default.Star else Icons.Default.StarBorder,
-                                                contentDescription = null,
-                                                tint = StoreProStar,
-                                                modifier = Modifier.size(12.dp)
-                                            )
+                    Card(
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF131B2E)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF1E293B)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = review.userName.take(1).uppercase(),
+                                            fontWeight = FontWeight.Bold,
+                                            color = StoreProSecondaryCyan,
+                                            fontSize = 13.sp
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            text = review.userName,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            fontSize = 13.sp
+                                        )
+                                        Row {
+                                            repeat(5) { i ->
+                                                Icon(
+                                                    imageVector = if (i < review.rating) Icons.Default.Star else Icons.Default.StarBorder,
+                                                    contentDescription = null,
+                                                    tint = StoreProStar,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                            }
                                         }
+                                    }
+                                }
+
+                                if (currentUserId != null && review.userId == currentUserId) {
+                                    IconButton(
+                                        onClick = { onDeleteReview(review.reviewId) },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Delete Review",
+                                            tint = Color(0xFFFF5252),
+                                            modifier = Modifier.size(16.dp)
+                                        )
                                     }
                                 }
                             }
 
-                            if (currentUserId != null && review.userId == currentUserId) {
-                                IconButton(
-                                    onClick = { onDeleteReview(review.reviewId) },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = "Delete Review",
-                                        tint = Color(0xFFFF5252),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
+                            if (review.comment.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = review.comment,
+                                    color = Color(0xFFCBD5E1),
+                                    fontSize = 12.sp,
+                                    lineHeight = 17.sp
+                                )
                             }
-                        }
-
-                        if (review.comment.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = review.comment,
-                                color = Color(0xFFCBD5E1),
-                                fontSize = 12.sp,
-                                lineHeight = 17.sp
-                            )
                         }
                     }
                 }
@@ -824,7 +969,15 @@ fun AppDetailsScreen(
     }
 
     // Fullscreen Screenshot Preview Dialog
-    if (previewScreenshotUrl != null) {
+    val activePreviewUrl = previewScreenshotUrl
+    if (activePreviewUrl != null) {
+        val fullPreviewRequest = remember(context, activePreviewUrl) {
+            ImageRequest.Builder(context)
+                .data(activePreviewUrl)
+                .precision(Precision.INEXACT)
+                .crossfade(150)
+                .build()
+        }
         Dialog(onDismissRequest = { previewScreenshotUrl = null }) {
             Box(
                 modifier = Modifier
@@ -834,11 +987,8 @@ fun AppDetailsScreen(
                 contentAlignment = Alignment.Center
             ) {
                 AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(previewScreenshotUrl)
-                        .crossfade(true)
-                        .build(),
-                    imageLoader = UniversalImageLoader.get(context),
+                    model = fullPreviewRequest,
+                    imageLoader = imageLoader,
                     contentDescription = "Full Preview",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier

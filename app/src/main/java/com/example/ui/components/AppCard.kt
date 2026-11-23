@@ -30,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -37,12 +38,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import coil.size.Precision
 import com.example.data.model.ApplicationItem
 import com.example.ui.theme.StoreProCardBorder
 import com.example.ui.theme.StoreProPrimaryGreen
 import com.example.ui.theme.StoreProStar
 import com.example.ui.upload.UniversalImageLoader
 import com.example.ui.upload.UniversalImageUtils
+import java.util.Locale
+import kotlin.math.roundToInt
 
 @Composable
 fun AppCard(
@@ -51,8 +55,26 @@ fun AppCard(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val imageLoader = remember(context) { UniversalImageLoader.get(context) }
+    val iconSizePx = remember(density) { with(density) { 76.dp.toPx().roundToInt().coerceAtLeast(144) } }
     val normalizedIconUrl = remember(app.iconUrl) { UniversalImageUtils.normalizeImageUrl(app.iconUrl) }
     val hasValidIcon = remember(normalizedIconUrl) { UniversalImageUtils.isValidImageUrl(normalizedIconUrl) }
+    val iconRequest = remember(context, normalizedIconUrl, hasValidIcon, iconSizePx) {
+        if (hasValidIcon) {
+            ImageRequest.Builder(context)
+                .data(normalizedIconUrl)
+                .size(iconSizePx, iconSizePx)
+                .precision(Precision.INEXACT)
+                .crossfade(150)
+                .build()
+        } else {
+            null
+        }
+    }
+    val ratingText = remember(app.averageRating) {
+        if (app.averageRating > 0) String.format(Locale.US, "%.1f", app.averageRating) else "4.8"
+    }
 
     Box(
         modifier = modifier
@@ -69,7 +91,7 @@ fun AppCard(
             colors = CardDefaults.cardColors(containerColor = Color(0xFF131B2E)),
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onClick() }
+                .clickable(onClick = onClick)
                 .testTag("app_card_${app.appId}")
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
@@ -81,13 +103,10 @@ fun AppCard(
                         .border(1.dp, StoreProCardBorder, RoundedCornerShape(18.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (hasValidIcon) {
+                    if (iconRequest != null) {
                         AsyncImage(
-                            model = ImageRequest.Builder(context)
-                                .data(normalizedIconUrl)
-                                .crossfade(true)
-                                .build(),
-                            imageLoader = UniversalImageLoader.get(context),
+                            model = iconRequest,
+                            imageLoader = imageLoader,
                             contentDescription = app.appName,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
@@ -137,7 +156,7 @@ fun AppCard(
                         )
                         Spacer(modifier = Modifier.width(3.dp))
                         Text(
-                            text = if (app.averageRating > 0) "%.1f".format(app.averageRating) else "4.8",
+                            text = ratingText,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
                             color = Color.White
@@ -163,8 +182,29 @@ fun AppListRowItem(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val imageLoader = remember(context) { UniversalImageLoader.get(context) }
+    val iconSizePx = remember(density) { with(density) { 54.dp.toPx().roundToInt().coerceAtLeast(108) } }
     val normalizedIconUrl = remember(app.iconUrl) { UniversalImageUtils.normalizeImageUrl(app.iconUrl) }
     val hasValidIcon = remember(normalizedIconUrl) { UniversalImageUtils.isValidImageUrl(normalizedIconUrl) }
+    val iconRequest = remember(context, normalizedIconUrl, hasValidIcon, iconSizePx) {
+        if (hasValidIcon) {
+            ImageRequest.Builder(context)
+                .data(normalizedIconUrl)
+                .size(iconSizePx, iconSizePx)
+                .precision(Precision.INEXACT)
+                .crossfade(150)
+                .build()
+        } else {
+            null
+        }
+    }
+    val rowSubtitle = remember(app.developerName, app.fileSizeBytes) {
+        "${app.developerName} • ${app.formattedSize}"
+    }
+    val rowRatingText = remember(app.averageRating) {
+        String.format(Locale.US, "%.1f", app.averageRating)
+    }
 
     Box(
         modifier = modifier
@@ -181,7 +221,7 @@ fun AppListRowItem(
             colors = CardDefaults.cardColors(containerColor = Color(0xFF131B2E)),
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onClick() }
+                .clickable(onClick = onClick)
                 .testTag("app_row_${app.appId}")
         ) {
             Row(
@@ -208,13 +248,10 @@ fun AppListRowItem(
                     .border(1.dp, StoreProCardBorder, RoundedCornerShape(14.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                if (hasValidIcon) {
+                if (iconRequest != null) {
                     AsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(normalizedIconUrl)
-                            .crossfade(true)
-                            .build(),
-                        imageLoader = UniversalImageLoader.get(context),
+                        model = iconRequest,
+                        imageLoader = imageLoader,
                         contentDescription = app.appName,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
@@ -241,7 +278,7 @@ fun AppListRowItem(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "${app.developerName} • ${app.formattedSize}",
+                    text = rowSubtitle,
                     fontSize = 12.sp,
                     color = Color(0xFF94A3B8),
                     maxLines = 1,
@@ -256,7 +293,7 @@ fun AppListRowItem(
                     )
                     Spacer(modifier = Modifier.width(3.dp))
                     Text(
-                        text = "%.1f".format(app.averageRating),
+                        text = rowRatingText,
                         fontSize = 11.sp,
                         color = Color(0xFFCBD5E1),
                         fontWeight = FontWeight.Medium

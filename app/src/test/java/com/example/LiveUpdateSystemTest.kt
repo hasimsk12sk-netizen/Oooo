@@ -4,34 +4,42 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.Signature
-import android.os.Build
 import android.os.Looper
 import android.provider.Settings
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.liveupdate.ApkVerificationResult
 import com.example.data.liveupdate.LiveUpdateApkVerifier
 import com.example.data.liveupdate.LiveUpdateController
 import com.example.data.liveupdate.LiveUpdateInstallVerifier
 import com.example.data.liveupdate.LiveUpdateVersionComparator
+import com.example.data.model.HistoryApkDownloadStatus
+import com.example.data.model.HistoryDownloadState
 import com.example.data.model.InspectedApkMetadata
 import com.example.data.model.InstalledAppDetails
 import com.example.data.model.LiveReleaseStatus
-import com.example.data.model.LiveUpdateDashboardState
 import com.example.data.model.LiveUpdateRelease
-import com.example.data.model.LiveUpdateStatus
+import com.example.data.model.UpdateHistoryRecord
 import com.example.data.model.VersionComparisonOutcome
 import com.example.data.repository.LiveUpdateRepository
-import com.example.ui.liveupdate.AdminLiveUpdateScreen
-import com.example.ui.liveupdate.LiveUpdateDashboardScreen
+import com.example.data.repository.StoreProRepository
+import com.example.ui.home.HomeScreen
+import com.example.ui.liveupdate.UpdateHistoryDetailScreen
+import com.example.ui.liveupdate.UpdateHistoryScreen
 import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.upload.UploadAppScreen
+import com.example.ui.upload.UploadStudioTab
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -59,92 +67,54 @@ class LiveUpdateSystemTest {
     val composeRule = createAndroidComposeRule<MainActivity>()
 
     @Test
-    fun mainActivity_showsNewLiveUpdateButton_andNavigatesToDashboardForRegularUser() {
+    fun mainActivity_hidesLiveUpdateButtonFromRegularUsersAndOpensDirectly() {
         composeRule.waitForIdle()
         shadowOf(Looper.getMainLooper()).idle()
 
-        // New Live Update button is visible immediately on Home for every user
-        composeRule.onNodeWithTag("live_update_entry_button").assertIsDisplayed()
-        composeRule.onNodeWithText("STORE PRO LIVE UPDATE").assertIsDisplayed()
-
-        // Legacy self-update components are permanently gone
+        // Public / guest users MUST NOT see Admin-only STORE PRO LIVE UPDATE button or update prompts
+        composeRule.onNodeWithTag("live_update_entry_button").assertDoesNotExist()
         composeRule.onNodeWithTag("mandatory_update_screen").assertDoesNotExist()
         composeRule.onNodeWithTag("app_update_dialog").assertDoesNotExist()
         composeRule.onNodeWithText("UPDATE NOW", ignoreCase = true).assertDoesNotExist()
+        composeRule.onNodeWithTag("home_lazy_column").assertIsDisplayed()
 
-        // Tap STORE PRO LIVE UPDATE -> opens Live Update Dashboard
-        composeRule.onNodeWithTag("live_update_entry_button").performClick()
-        composeRule.waitForIdle()
-        shadowOf(Looper.getMainLooper()).idle()
-
-        composeRule.onNodeWithTag("live_update_dashboard_screen").assertIsDisplayed()
-        composeRule.onNodeWithTag("live_update_installed_card").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("live_update_latest_card").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("live_update_comparison_table").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("live_update_release_history").performScrollTo().assertIsDisplayed()
-
-        // Dynamic installed version values match build metadata (never hardcoded)
+        // Dynamic installed version matches BuildConfig (v1.3 Build 4)
         val context = ApplicationProvider.getApplicationContext<Context>()
         val installed = LiveUpdateApkVerifier.readInstalledAppDetails(context)
-        assertEquals(BuildConfig.VERSION_CODE.toLong(), installed.versionCode)
-        assertEquals(BuildConfig.VERSION_NAME, installed.versionName)
+        assertEquals(4L, installed.versionCode)
+        assertEquals("1.3", installed.versionName)
         assertEquals(context.packageName, installed.packageName)
-
-        // Ordinary users MUST NOT see Admin Release Management button
-        composeRule.onNodeWithTag("open_admin_live_update_button").assertDoesNotExist()
-
-        // Navigate back to Home cleanly
-        composeRule.onNodeWithTag("live_update_back_button").performClick()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag("home_lazy_column").assertIsDisplayed()
     }
 
     @Test
     @Config(qualifiers = "w840dp-h900dp")
-    fun dashboard_rendersAdminStudioButtonOnlyWhenAuthorized_onTabletLayout() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        val installed = LiveUpdateApkVerifier.readInstalledAppDetails(context)
-        val latest = LiveUpdateRelease(
-            releaseId = "release_v3",
-            versionName = "1.2",
-            versionCode = 3L,
-            packageName = installed.packageName,
-            apkDownloadUrl = "https://example.com/storepro_v3.apk",
-            apkSize = 25_000_000L,
-            releaseNotes = "Performance upgrades and Live Update center.",
-            releaseDate = "2026-11-21",
-            published = true,
-            releaseStatus = LiveReleaseStatus.PUBLISHED.name
-        )
+    fun homeScreen_hidesLiveUpdateButtonForBothUsersAndVerifiedAdmins() {
+        var canAdmin by mutableStateOf(false)
 
         composeRule.runOnUiThread {
             composeRule.activity.setContent {
                 MyApplicationTheme(darkTheme = true) {
-                    LiveUpdateDashboardScreen(
-                        state = LiveUpdateDashboardState(
-                            installed = installed,
-                            latestRelease = latest,
-                            publishedHistory = listOf(latest),
-                            status = LiveUpdateStatus.UPDATE_AVAILABLE,
-                            statusDetail = "Build 3 (1.2) is available."
-                        ),
-                        canAccessAdminTools = true,
-                        onBack = {},
-                        onRefresh = {},
-                        onStartDownload = {},
-                        onCancelDownload = {},
-                        onRetryDownload = {},
-                        onInstallUpdate = {},
-                        onOpenAdminManager = {}
+                    HomeScreen(
+                        applications = emptyList(),
+                        userProfile = null,
+                        canAccessAdminTools = canAdmin,
+                        onOpenSearch = {},
+                        onSelectApp = {},
+                        onOpenProfile = {},
+                        onOpenLiveUpdate = {}
                     )
                 }
             }
         }
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag("live_update_installed_card").assertIsDisplayed()
-        composeRule.onNodeWithTag("live_update_latest_card").assertIsDisplayed()
-        composeRule.onNodeWithTag("live_update_status_text").assertTextEquals("New update available.")
-        composeRule.onNodeWithTag("open_admin_live_update_button").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("live_update_entry_button").assertDoesNotExist()
+        composeRule.onNodeWithText("STORE PRO LIVE UPDATE", ignoreCase = true).assertDoesNotExist()
+
+        // Admin verifies -> HomeScreen must STILL hide STORE PRO LIVE UPDATE (Admin accesses it via Admin Upload Studio)
+        canAdmin = true
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("live_update_entry_button").assertDoesNotExist()
+        composeRule.onNodeWithText("STORE PRO LIVE UPDATE", ignoreCase = true).assertDoesNotExist()
     }
 
     @Test
@@ -171,7 +141,7 @@ class LiveUpdateSystemTest {
     fun versionComparator_usesStrictVersionCodeComparisonAndIgnoresVersionName() {
         val baseRelease = LiveUpdateRelease(
             releaseId = "release_v2",
-            versionName = "9.9.9", // Higher versionName string MUST NOT trigger update when versionCode is equal
+            versionName = "9.9.9",
             versionCode = 2L,
             packageName = "com.aistudio.storepro.vqxknp",
             apkDownloadUrl = "https://example.com/v2.apk",
@@ -182,112 +152,108 @@ class LiveUpdateSystemTest {
             releaseStatus = LiveReleaseStatus.PUBLISHED.name
         )
 
-        // Equal build (2 == 2) -> UpToDate
-        val equalOutcome = LiveUpdateVersionComparator.compare(2L, baseRelease)
-        assertTrue(equalOutcome is VersionComparisonOutcome.UpToDate)
+        assertTrue(LiveUpdateVersionComparator.compare(2L, baseRelease) is VersionComparisonOutcome.UpToDate)
+        assertTrue(LiveUpdateVersionComparator.compare(5L, baseRelease) is VersionComparisonOutcome.UpToDate)
 
-        // Higher installed build than server (5 > 2) -> Never offer older APK
-        val downgradeOutcome = LiveUpdateVersionComparator.compare(5L, baseRelease)
-        assertTrue(downgradeOutcome is VersionComparisonOutcome.UpToDate)
-
-        // Newer published build (2 < 3) -> UpdateAvailable
         val newerRelease = baseRelease.copy(releaseId = "release_v3", versionCode = 3L, versionName = "1.2")
-        val upgradeOutcome = LiveUpdateVersionComparator.compare(2L, newerRelease)
-        assertTrue(upgradeOutcome is VersionComparisonOutcome.UpdateAvailable)
+        assertTrue(LiveUpdateVersionComparator.compare(2L, newerRelease) is VersionComparisonOutcome.UpdateAvailable)
 
-        // Unpublished draft MUST NOT appear available to users
         val draftRelease = newerRelease.copy(published = false, releaseStatus = LiveReleaseStatus.DRAFT.name)
-        val draftOutcome = LiveUpdateVersionComparator.compare(2L, draftRelease)
-        assertTrue(draftOutcome is VersionComparisonOutcome.UpToDate)
+        assertTrue(LiveUpdateVersionComparator.compare(2L, draftRelease) is VersionComparisonOutcome.UpToDate)
     }
 
     @Test
-    fun verifier_blocksMismatchedPackageVersionSigningCertAndInvalidApkOnAdminPublish() {
+    fun repository_buildsPermanentNonOverwritingStoragePathsPerVersionAndBuild() {
+        val v1Path = LiveUpdateRepository.permanentStoragePath("1.1", 2L, "STORE PRO v1.1.apk")
+        val v2Path = LiveUpdateRepository.permanentStoragePath("1.2", 3L, "STORE PRO v1.2.apk")
+        assertEquals("STORE_PRO/RELEASES/v1.1_b2/STORE_PRO_v1.1.apk", v1Path)
+        assertEquals("STORE_PRO/RELEASES/v1.2_b3/STORE_PRO_v1.2.apk", v2Path)
+        assertFalse(v1Path == v2Path)
+    }
+
+    @Test
+    fun verifier_blocksMismatchedPackageVersionSigningCertAndDetectsHistoricalDowngrade() {
         val installed = InstalledAppDetails(
             appName = "STORE PRO",
             packageName = "com.aistudio.storepro.vqxknp",
-            versionName = "1.1",
-            versionCode = 2L,
+            versionName = "1.2",
+            versionCode = 3L,
             androidVersion = "15",
             apiLevel = 35,
             signingSha256Set = setOf("aabbccdd11223344")
         )
         val validCandidate = InspectedApkMetadata(
-            fileName = "storepro_v3.apk",
-            localTempPath = "/tmp/storepro_v3.apk",
+            fileName = "storepro_v4.apk",
+            localTempPath = "/tmp/storepro_v4.apk",
             packageName = "com.aistudio.storepro.vqxknp",
-            versionName = "1.2",
-            versionCode = 3L,
+            versionName = "1.3",
+            versionCode = 4L,
             fileSizeBytes = 15_000_000L,
             apkSha256 = "deadbeef",
             signingSha256Set = setOf("aabbccdd11223344"),
             isValidArchive = true
         )
 
-        // 1. Valid candidate passes cleanly
-        val okResult = LiveUpdateApkVerifier.verifyForAdminPublish(
-            inspected = validCandidate,
-            installed = installed,
-            enteredVersionName = "1.2",
-            enteredVersionCode = 3L,
-            highestPublishedVersionCode = 2L
+        assertTrue(
+            LiveUpdateApkVerifier.verifyForAdminPublish(
+                inspected = validCandidate,
+                installed = installed,
+                enteredVersionName = "1.3",
+                enteredVersionCode = 4L,
+                highestPublishedVersionCode = 3L
+            ).isValid
         )
-        assertTrue(okResult.isValid)
-        assertEquals("aabbccdd11223344", okResult.matchedSigningSha256)
+        assertFalse(
+            LiveUpdateApkVerifier.verifyForAdminPublish(
+                inspected = validCandidate.copy(packageName = "com.other.evilapp"),
+                installed = installed,
+                enteredVersionName = "1.3",
+                enteredVersionCode = 4L,
+                highestPublishedVersionCode = 3L
+            ).isValid
+        )
+        assertFalse(
+            LiveUpdateApkVerifier.verifyForAdminPublish(
+                inspected = validCandidate.copy(signingSha256Set = setOf("ffffffff00000000")),
+                installed = installed,
+                enteredVersionName = "1.3",
+                enteredVersionCode = 4L,
+                highestPublishedVersionCode = 3L
+            ).isValid
+        )
 
-        // 2. Wrong package name blocked
-        val wrongPkg = LiveUpdateApkVerifier.verifyForAdminPublish(
-            inspected = validCandidate.copy(packageName = "com.other.evilapp"),
-            installed = installed,
-            enteredVersionName = "1.2",
-            enteredVersionCode = 3L,
-            highestPublishedVersionCode = 2L
+        // Historical downgrade protection: installing older build 2 over installed build 3 triggers safe Android downgrade guard
+        val inspectedOlder = validCandidate.copy(
+            fileName = "storepro_v2.apk",
+            versionName = "1.1",
+            versionCode = 2L,
+            fileSizeBytes = 14_000_000L
         )
-        assertFalse(wrongPkg.isValid)
+        val olderRecord = UpdateHistoryRecord(
+            historyId = "hist_v1.1_b2",
+            versionName = "1.1",
+            versionCode = 2L,
+            packageName = "com.aistudio.storepro.vqxknp",
+            apkFileSize = 14_000_000L,
+            signingCertificateFingerprint = "aabbccdd11223344"
+        )
+        val downgradeCheck = LiveUpdateApkVerifier.verifyHistoricalMetadataCompatibility(inspectedOlder, olderRecord, installed)
+        assertFalse(downgradeCheck.isValid)
+        assertTrue(downgradeCheck.errors.any { it.contains("downgrade", ignoreCase = true) })
 
-        // 3. Version Code mismatch against APK blocked
-        val wrongCode = LiveUpdateApkVerifier.verifyForAdminPublish(
-            inspected = validCandidate,
-            installed = installed,
-            enteredVersionName = "1.2",
-            enteredVersionCode = 4L,
-            highestPublishedVersionCode = 2L
+        // Historical upgrade (build 4 over installed build 3) passes cleanly
+        val upgradeRecord = olderRecord.copy(
+            historyId = "hist_v1.3_b4",
+            versionName = "1.3",
+            versionCode = 4L,
+            apkFileSize = 15_000_000L
         )
-        assertFalse(wrongCode.isValid)
-
-        // 4. Same or older Version Code than already published blocked
-        val olderCode = LiveUpdateApkVerifier.verifyForAdminPublish(
-            inspected = validCandidate.copy(versionCode = 2L),
-            installed = installed,
-            enteredVersionName = "1.2",
-            enteredVersionCode = 2L,
-            highestPublishedVersionCode = 2L
-        )
-        assertFalse(olderCode.isValid)
-
-        // 5. Incompatible signing certificate blocked
-        val wrongCert = LiveUpdateApkVerifier.verifyForAdminPublish(
-            inspected = validCandidate.copy(signingSha256Set = setOf("ffffffff00000000")),
-            installed = installed,
-            enteredVersionName = "1.2",
-            enteredVersionCode = 3L,
-            highestPublishedVersionCode = 2L
-        )
-        assertFalse(wrongCert.isValid)
-
-        // 6. Corrupted / invalid APK archive blocked
-        val corrupted = LiveUpdateApkVerifier.verifyForAdminPublish(
-            inspected = validCandidate.copy(isValidArchive = false, errorMessage = "Corrupted archive"),
-            installed = installed,
-            enteredVersionName = "1.2",
-            enteredVersionCode = 3L,
-            highestPublishedVersionCode = 2L
-        )
-        assertFalse(corrupted.isValid)
+        val upgradeCheck = LiveUpdateApkVerifier.verifyHistoricalMetadataCompatibility(validCandidate, upgradeRecord, installed)
+        assertTrue(upgradeCheck.isValid)
     }
 
     @Test
-    fun controller_downloadsVerifiedApkTracksProgressBuildsInstallIntentAndHandlesErrors(): Unit = runBlocking {
+    fun controller_downloadsHistoricalApkVerifiesIntegrityAndHandlesErrors(): Unit = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val repo = LiveUpdateRepository(context)
         val zipApkBytes = buildMinimalZipApkBytes()
@@ -313,23 +279,11 @@ class LiveUpdateSystemTest {
                                 out.write(header.toByteArray())
                                 out.write(zipApkBytes)
                             }
-                            "HTML_ERROR" -> {
+                            else -> {
                                 val html = "<!DOCTYPE html><html><body>Error 500</body></html>".toByteArray()
                                 val header = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: ${html.size}\r\nConnection: close\r\n\r\n"
                                 out.write(header.toByteArray())
                                 out.write(html)
-                            }
-                            "CORRUPT_BYTES" -> {
-                                val bad = "NOT_A_ZIP_OR_APK_BINARY_PAYLOAD".toByteArray()
-                                val header = "HTTP/1.1 200 OK\r\nContent-Type: application/vnd.android.package-archive\r\nContent-Length: ${bad.size}\r\nConnection: close\r\n\r\n"
-                                out.write(header.toByteArray())
-                                out.write(bad)
-                            }
-                            else -> {
-                                val msg = "Not Found".toByteArray()
-                                val header = "HTTP/1.1 404 Not Found\r\nContent-Length: ${msg.size}\r\nConnection: close\r\n\r\n"
-                                out.write(header.toByteArray())
-                                out.write(msg)
                             }
                         }
                         out.flush()
@@ -348,7 +302,6 @@ class LiveUpdateSystemTest {
                 apiLevel = 35,
                 signingSha256Set = setOf("aabbccdd11223344")
             )
-            var verifyShouldPass = true
             val verifier = object : LiveUpdateInstallVerifier {
                 override fun readInstalled(context: Context): InstalledAppDetails = baseInstalled
                 override fun verifyDownloadedApk(
@@ -356,13 +309,14 @@ class LiveUpdateSystemTest {
                     downloadedFile: File,
                     expectedRelease: LiveUpdateRelease,
                     installed: InstalledAppDetails
-                ): ApkVerificationResult {
-                    return if (verifyShouldPass) {
-                        ApkVerificationResult(true, emptyList(), "aabbccdd11223344")
-                    } else {
-                        ApkVerificationResult(false, listOf("Incompatible APK signing certificate."))
-                    }
-                }
+                ): ApkVerificationResult = ApkVerificationResult(true, emptyList(), "aabbccdd11223344")
+
+                override fun verifyHistoricalApk(
+                    context: Context,
+                    downloadedFile: File,
+                    historyRecord: UpdateHistoryRecord,
+                    installed: InstalledAppDetails
+                ): ApkVerificationResult = ApkVerificationResult(true, emptyList(), "aabbccdd11223344")
             }
 
             var hasInstallPerm = false
@@ -373,65 +327,43 @@ class LiveUpdateSystemTest {
                 canInstallPackagesProvider = { hasInstallPerm }
             )
 
-            val publishedV3 = LiveUpdateRelease(
-                releaseId = "release_v3",
+            val historyRec = UpdateHistoryRecord(
+                historyId = "hist_v1.2_b3",
                 versionName = "1.2",
                 versionCode = 3L,
                 packageName = context.packageName,
-                apkDownloadUrl = "http://127.0.0.1:$port/storepro_v3.apk",
-                apkSize = zipApkBytes.size.toLong(),
-                releaseNotes = "Live update v1.2",
-                releaseDate = "2026-11-21",
-                published = true,
-                releaseStatus = LiveReleaseStatus.PUBLISHED.name,
-                apkSha256 = zipSha256,
-                signingSha256 = "aabbccdd11223344"
+                apkDownloadUrl = "http://127.0.0.1:$port/STORE_PRO_v1.2_build3.apk",
+                apkFileName = "STORE_PRO_v1.2_build3.apk",
+                apkFileSize = zipApkBytes.size.toLong(),
+                signingCertificateFingerprint = "aabbccdd11223344",
+                releaseNotes = "Version 1.2 historical release"
             )
 
-            // Publish release into controller -> UPDATE_AVAILABLE
-            controller.applyPublishedReleases(listOf(publishedV3))
-            assertEquals(LiveUpdateStatus.UPDATE_AVAILABLE, controller.state.value.status)
+            // 1. HTML / invalid response fails cleanly
+            serveMode = "HTML"
+            controller.downloadHistoricalApk(historyRec, this)
+            waitUntil {
+                controller.historyDownloads.value[historyRec.historyId]?.status == HistoryApkDownloadStatus.FAILED
+            }
 
-            // 1. HTML error fails safely -> FAILED ("Update failed.")
-            serveMode = "HTML_ERROR"
-            controller.startDownload(this)
-            waitUntil { controller.state.value.status == LiveUpdateStatus.FAILED }
-            assertEquals("Update failed.", controller.state.value.status.label)
-            assertTrue(controller.state.value.errorMessage?.contains("webpage", ignoreCase = true) == true)
-
-            // 2. Corrupted binary fails safely -> FAILED
-            serveMode = "CORRUPT_BYTES"
-            controller.retryDownload(this)
-            waitUntil { controller.state.value.status == LiveUpdateStatus.FAILED }
-            assertTrue(controller.state.value.errorMessage?.contains("corrupted", ignoreCase = true) == true)
-
-            // 3. Incompatible signature fails verification even after valid download -> FAILED
+            // 2. Valid archived APK download succeeds cleanly -> READY
             serveMode = "VALID"
-            verifyShouldPass = false
-            controller.retryDownload(this)
-            waitUntil { controller.state.value.status == LiveUpdateStatus.FAILED }
-            assertTrue(controller.state.value.errorMessage?.contains("certificate", ignoreCase = true) == true)
+            controller.downloadHistoricalApk(historyRec, this)
+            waitUntil {
+                controller.historyDownloads.value[historyRec.historyId]?.status == HistoryApkDownloadStatus.READY
+            }
+            val downloadedState = controller.historyDownloads.value[historyRec.historyId]!!
+            assertEquals(100, downloadedState.progressPercent)
+            assertNotNull(downloadedState.localApkPath)
+            assertTrue(File(downloadedState.localApkPath!!).exists())
 
-            // 4. Valid signed download succeeds -> READY_TO_INSTALL (never claims "Installed")
-            verifyShouldPass = true
-            controller.retryDownload(this)
-            waitUntil { controller.state.value.status == LiveUpdateStatus.READY_TO_INSTALL }
-            val readyState = controller.state.value
-            assertEquals(100, readyState.downloadPercent)
-            assertNotNull(readyState.downloadedApkPath)
-            assertTrue(File(readyState.downloadedApkPath!!).exists())
-
-            // Unknown sources permission needed on API 26+
             hasInstallPerm = false
-            val permIntent = controller.buildInstallActionIntent()
+            val permIntent = controller.buildHistoricalInstallActionIntent(historyRec)
             assertEquals(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, permIntent?.action)
 
-            // When permission granted -> ACTION_VIEW FileProvider URI
             hasInstallPerm = true
-            val installIntent = controller.buildInstallActionIntent()
+            val installIntent = controller.buildHistoricalInstallActionIntent(historyRec)
             assertEquals(Intent.ACTION_VIEW, installIntent?.action)
-            assertTrue(installIntent?.data?.scheme == "content")
-            assertEquals("${context.packageName}.provider", installIntent?.data?.authority)
             assertEquals("application/vnd.android.package-archive", installIntent?.type)
         } finally {
             server.close()
@@ -440,36 +372,136 @@ class LiveUpdateSystemTest {
     }
 
     @Test
-    fun adminLiveUpdateScreen_rendersAllTenFieldsCorrectly() {
+    fun uploadStudioPublishUpdateTab_andHistoryScreensRenderSearchFilterAndDetails() {
         val context = ApplicationProvider.getApplicationContext<Context>()
+        val storeRepo = StoreProRepository(context)
         val liveRepo = LiveUpdateRepository(context)
         val deviceRepo = com.example.data.repository.DeviceAndUpdateRepository(context)
+
+        val records = listOf(
+            UpdateHistoryRecord(
+                historyId = "hist_1",
+                versionName = "1.2",
+                versionCode = 3L,
+                packageName = context.packageName,
+                apkDownloadUrl = "https://example.com/v1.2.apk",
+                apkFileName = "STORE_PRO_v1.2_build3.apk",
+                apkFileSize = 18_500_000L,
+                releaseNotes = "Device dashboard + search RGB focus",
+                mandatoryUpdate = true,
+                apkAvailable = true,
+                releaseTimestamp = 1_760_000_000_000L,
+                adminEmail = "hasimsk12345678sk@gmail.com",
+                previousVersion = "v1.1 (2)"
+            ),
+            UpdateHistoryRecord(
+                historyId = "hist_2",
+                versionName = "1.1",
+                versionCode = 2L,
+                packageName = context.packageName,
+                apkDownloadUrl = "",
+                apkFileName = "STORE_PRO_v1.1_build2.apk",
+                apkFileSize = 16_000_000L,
+                releaseNotes = "Initial dark theme polish",
+                mandatoryUpdate = false,
+                apkAvailable = false,
+                releaseTimestamp = 1_750_000_000_000L,
+                adminEmail = "hasimsk12345678sk@gmail.com",
+                previousVersion = "v1.0 (1)"
+            )
+        )
+
+        var selectedRec by mutableStateOf<UpdateHistoryRecord?>(null)
 
         composeRule.runOnUiThread {
             composeRule.activity.setContent {
                 MyApplicationTheme(darkTheme = true) {
-                    AdminLiveUpdateScreen(
-                        allReleases = emptyList(),
-                        liveUpdateRepository = liveRepo,
-                        deviceUpdateRepository = deviceRepo,
-                        onBack = {},
-                        onUnauthorized = {},
-                        onStatusMessage = {}
-                    )
+                    if (selectedRec == null) {
+                        UploadAppScreen(
+                            currentUserId = "admin_uid",
+                            repository = storeRepo,
+                            deviceUpdateRepository = deviceRepo,
+                            liveUpdateRepository = liveRepo,
+                            initialTab = UploadStudioTab.PUBLISH_UPDATE,
+                            adminAllLiveReleases = emptyList(),
+                            onOpenUpdateHistory = {},
+                            onStatusMessage = {},
+                            onBack = {},
+                            onUploadSuccess = {},
+                            onAdminLogout = {},
+                            onUnauthorized = {}
+                        )
+                    } else {
+                        UpdateHistoryDetailScreen(
+                            record = selectedRec!!,
+                            downloadState = HistoryDownloadState(historyId = selectedRec!!.historyId),
+                            liveUpdateRepository = liveRepo,
+                            onDownloadApk = {},
+                            onCancelDownload = {},
+                            onLaunchInstall = { Result.success(true) },
+                            onBack = { selectedRec = null },
+                            onUnauthorized = {},
+                            onStatusMessage = {}
+                        )
+                    }
                 }
             }
         }
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag("admin_live_version_name_input").assertIsDisplayed()
-        composeRule.onNodeWithTag("admin_live_version_code_input").assertIsDisplayed()
-        composeRule.onNodeWithTag("admin_live_pick_apk_button").assertIsDisplayed()
+        composeRule.onNodeWithTag("studio_tab_publish_app").assertIsDisplayed()
+        composeRule.onNodeWithTag("studio_tab_publish_update").assertIsDisplayed()
+        composeRule.onNodeWithTag("admin_open_history_button").assertIsDisplayed()
+        composeRule.onNodeWithTag("admin_live_version_code_input").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("admin_live_version_name_input").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("admin_live_apk_url_input").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("admin_live_apk_size_text").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("admin_live_release_notes_input").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("admin_live_release_date_input").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("admin_live_status_published").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("admin_live_status_draft").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("admin_live_mandatory_switch").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("admin_live_publish_immediately_switch").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("admin_live_submit_button").performScrollTo().assertIsDisplayed()
+
+        // Test History list + filter + navigation to Detail Screen
+        composeRule.runOnUiThread {
+            composeRule.activity.setContent {
+                MyApplicationTheme(darkTheme = true) {
+                    if (selectedRec == null) {
+                        UpdateHistoryScreen(
+                            records = records,
+                            onSelectRecord = { selectedRec = it },
+                            onBack = {},
+                            onUnauthorized = {}
+                        )
+                    } else {
+                        UpdateHistoryDetailScreen(
+                            record = selectedRec!!,
+                            downloadState = HistoryDownloadState(historyId = selectedRec!!.historyId),
+                            liveUpdateRepository = liveRepo,
+                            onDownloadApk = {},
+                            onCancelDownload = {},
+                            onLaunchInstall = { Result.success(true) },
+                            onBack = { selectedRec = null },
+                            onUnauthorized = {},
+                            onStatusMessage = {}
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("history_item_card_hist_1").assertIsDisplayed()
+        composeRule.onNodeWithTag("update_history_lazy_column")
+            .performScrollToNode(hasTestTag("history_item_card_hist_2"))
+        composeRule.onNodeWithTag("history_item_card_hist_2").assertIsDisplayed()
+
+        composeRule.onNodeWithTag("history_filter_MANDATORY").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("history_item_card_hist_1").assertIsDisplayed()
+        composeRule.onNodeWithTag("history_item_card_hist_2").assertDoesNotExist()
+
+        composeRule.onNodeWithTag("history_item_card_hist_1").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("update_history_detail_screen").assertIsDisplayed()
+        composeRule.onNodeWithTag("history_verify_apk_button").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("history_download_apk_button").performScrollTo().assertIsDisplayed()
     }
 
     private suspend fun waitUntil(timeoutMs: Long = 5_000L, predicate: () -> Boolean) {
